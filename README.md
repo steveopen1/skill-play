@@ -1,2 +1,2 @@
 # skill-play
-这是一个我经常使用的skill合集
+所有skill起源于工作所需
