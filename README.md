@@ -6,13 +6,13 @@
 
 ```
 skill-play/
-├── security-testing/                    ⭐ 原始版
+├── security-testing/                    ⭐ 通用版
 │   ├── SKILL.md
 │   └── data/                            (85 个文件)
 │       ├── web/                         (Web 渗透)
 │       └── intranet/                    (内网渗透)
 │
-└── API-Security-Testing-Optimized/      ⭐ v5.5 深度版
+└── API-Security-Testing-Optimized/      ⭐ 接口测试版
     ├── core/
     ├── payloads/
     ├── workflows/
@@ -22,7 +22,7 @@ skill-play/
 
 ## 🎯 包含的 Skill
 
-### 1. security-testing (原始版)
+### 1. security-testing (通用版)
 
 **完整的渗透测试知识库**
 
@@ -42,7 +42,7 @@ skill security-testing rce
 
 ---
 
-### 2. API-Security-Testing-Optimized (v5.5 深度版)
+### 2. API-Security-Testing-Optimized ⭐ 接口测试版
 
 **深度 API 渗透测试引擎**
 
