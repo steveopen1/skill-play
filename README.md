@@ -161,7 +161,7 @@ python3 core/deep_api_tester_v55.py http://target.com/ report.md
 
 ### API-Security-Testing-Optimized v5.5
 
-**测试目标**: http://49.65.100.160:6004/
+**测试目标**: http://xxxxx/
 
 | 指标 | 结果 |
 |------|------|
