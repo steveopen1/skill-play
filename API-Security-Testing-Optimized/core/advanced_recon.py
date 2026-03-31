@@ -41,7 +41,10 @@ class ReconResult:
 
 
 class SwaggerDiscoverer:
-    """Swagger/OpenAPI 文档发现"""
+    """Swagger/OpenAPI 文档发现
+    
+    优化：基于 API 父路径探测，比根路径探测更高效
+    """
     
     COMMON_SWAGGER_PATHS = [
         '/swagger-ui.html',
@@ -75,9 +78,85 @@ class SwaggerDiscoverer:
         self.session = session or requests.Session()
         self.discovered: List[Dict] = []
     
-    def discover(self, base_url: str) -> List[Dict]:
-        """发现 Swagger 文档"""
+    def discover(self, base_url: str, api_parent_paths: List[str] = None) -> List[Dict]:
+        """发现 Swagger 文档
+        
+        Args:
+            base_url: 目标基础 URL
+            api_parent_paths: 已发现的 API 父路径列表 (用于精确探测)
+        """
         results = []
+        checked_urls = set()
+        
+        # 1. 首先在 API 父路径后探测 (更高效)
+        if api_parent_paths:
+            for parent in api_parent_paths[:15]:
+                for swagger_path in self.COMMON_SWAGGER_PATHS:
+                    url = base_url.rstrip('/') + parent + swagger_path
+                    if url in checked_urls:
+                        continue
+                    checked_urls.add(url)
+                    
+                    result = self._check_swagger_url(url)
+                    if result:
+                        results.append(result)
+        
+        # 2. 然后在根路径探测
+        for swagger_path in self.COMMON_SWAGGER_PATHS:
+            url = base_url.rstrip('/') + swagger_path
+            if url in checked_urls:
+                continue
+            checked_urls.add(url)
+            
+            result = self._check_swagger_url(url)
+            if result:
+                results.append(result)
+        
+        self.discovered = results
+        return results
+    
+    def _check_swagger_url(self, url: str) -> Optional[Dict]:
+        """检查单个 URL 是否为 Swagger 文档"""
+        try:
+            resp = self.session.get(url, timeout=5, allow_redirects=True)
+            
+            if resp.status_code == 200:
+                content_type = resp.headers.get('Content-Type', '')
+                
+                if 'json' in content_type or url.endswith(('.json', '.yaml', '.yml')):
+                    return {
+                        'url': url,
+                        'type': 'openapi',
+                        'status': 200,
+                        'is_json': True
+                    }
+                elif 'html' in content_type and 'swagger' in resp.text.lower():
+                    return {
+                        'url': url,
+                        'type': 'swagger-ui',
+                        'status': 200,
+                        'is_json': False
+                    }
+                elif 'html' in content_type:
+                    return {
+                        'url': url,
+                        'type': 'spa-fallback',
+                        'status': 200,
+                        'is_json': False
+                    }
+                    
+            elif resp.status_code in [401, 403]:
+                if 'swagger' in resp.text.lower() or 'openapi' in resp.text.lower():
+                    return {
+                        'url': url,
+                        'type': 'swagger-protected',
+                        'status': resp.status_code
+                    }
+                    
+        except Exception:
+            pass
+        
+        return None
         
         for path in self.COMMON_SWAGGER_PATHS:
             url = base_url.rstrip('/') + path
