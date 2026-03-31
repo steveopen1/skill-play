@@ -10,6 +10,9 @@ Agent驱动的自动化API渗透测试
 - testing_loop: 洞察驱动测试循环
 - api_tester: API测试执行器
 - report_generator: 报告生成器
+- collectors_coordinator: 采集器联动管理器
+- js_collector: JS文件分析采集器
+- browser_collector: 无头浏览器采集器
 """
 
 from .orchestrator import EnhancedAgenticOrchestrator, run_enhanced_agentic_test
@@ -19,6 +22,7 @@ from .strategy_pool import StrategyPool, Strategist, create_strategy_pool, creat
 from .testing_loop import InsightDrivenLoop, create_test_loop
 from .api_tester import APITester
 from .report_generator import ReportGenerator
+from .collectors_coordinator import CollectorsCoordinator, create_coordinator
 
 __version__ = "3.0"
 __all__ = [
@@ -38,4 +42,6 @@ __all__ = [
     "create_test_loop",
     "APITester",
     "ReportGenerator",
+    "CollectorsCoordinator",
+    "create_coordinator",
 ]

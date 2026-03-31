@@ -120,16 +120,19 @@ class EnhancedAgenticOrchestrator:
     增强型 Agentic Orchestrator v3.0
     
     集成组件：
+    - CollectorsCoordinator: 采集器联动管理器
     - ReasoningEngine: 多层级推理引擎
     - ContextManager: 上下文管理器
     - StrategyPool: 策略池系统
     - InsightDrivenLoop: 洞察驱动测试循环
     """
     
-    def __init__(self, target: str, session: 'requests.Session' = None):
+    def __init__(self, target: str, session: 'requests.Session' = None, use_browser: bool = True):
         self.target = target
         self.session = session or (requests.Session() if HAS_REQUESTS else None)
+        self.use_browser = use_browser
         
+        self.collector_coordinator = None
         self.reasoner = create_reasoner()
         self.context_manager = create_context_manager(target)
         self.strategy_pool = create_strategy_pool()
@@ -198,10 +201,12 @@ class EnhancedAgenticOrchestrator:
         print(" Enhanced Agentic Security Testing v3.0")
         print("=" * 70)
         print(f"Target: {self.target}")
-        print(f"Components: Reasoner + ContextManager + StrategyPool + TestingLoop")
+        print(f"Components: Coordinator + Reasoner + ContextManager + StrategyPool")
         print("=" * 70)
         
         start_time = time.time()
+        
+        self._stage_collection()
         
         self.context_manager.set_phase(TestPhase.RECON)
         
@@ -239,6 +244,87 @@ class EnhancedAgenticOrchestrator:
         duration = time.time() - start_time
         
         return self._generate_report(duration)
+    
+    def _stage_collection(self):
+        """阶段 0: 采集器联动收集"""
+        print("\n[*] Phase 0: 采集器联动收集")
+        
+        self._emit('stage_start', {'stage': 'collection'})
+        start = time.time()
+        
+        try:
+            from .collectors_coordinator import create_coordinator
+            
+            self.collector_coordinator = create_coordinator(self.target, self.session)
+            collected_data = self.collector_coordinator.collect(use_browser=self.use_browser)
+            
+            summary = self.collector_coordinator.get_summary()
+            
+            if summary.get('backend_api_base'):
+                self.context_manager.update_tech_stack({
+                    'backend_api_base': summary['backend_api_base']
+                })
+                self._emit('insight_generated', {
+                    'type': 'backend_discovery',
+                    'content': f"发现后端 API: {summary['backend_api_base']}"
+                })
+            
+            if summary.get('internal_ips'):
+                for ip in summary['internal_ips']:
+                    self.context_manager.mark_internal_address(ip, source='js_analysis')
+            
+            for endpoint in collected_data.api_endpoints:
+                ep = Endpoint(
+                    path=endpoint.get('path', ''),
+                    method=endpoint.get('method', 'GET'),
+                    source='collector',
+                    score=7
+                )
+                self.context_manager.add_discovered_endpoint(ep)
+            
+            for insight in summary.get('insights', []):
+                self._emit('insight_generated', {
+                    'type': 'collector',
+                    'content': insight
+                })
+            
+            duration = time.time() - start
+            
+            self.stage_results['collection'] = StageResult(
+                name="collection",
+                status=StageStatus.COMPLETED,
+                duration=duration,
+                data={
+                    'js_urls': len(collected_data.js_urls),
+                    'api_endpoints': len(collected_data.api_endpoints),
+                    'backend_api_base': collected_data.backend_api_base,
+                    'collector_stats': collected_data.collector_stats
+                },
+                insights=[{'type': 'collector', 'content': i} for i in summary.get('insights', [])]
+            )
+            
+            print(f"    完成 ({duration:.1f}s)")
+            print(f"    JS URLs: {len(collected_data.js_urls)}")
+            print(f"    API 端点: {len(collected_data.api_endpoints)}")
+            if collected_data.backend_api_base:
+                print(f"    后端 API: {collected_data.backend_api_base}")
+            
+        except Exception as e:
+            duration = time.time() - start
+            logger.error(f"Collection failed: {e}")
+            
+            self.stage_results['collection'] = StageResult(
+                name="collection",
+                status=StageStatus.FAILED,
+                duration=duration,
+                problems=[str(e)],
+                suggestions=["尝试禁用无头浏览器采集"]
+            )
+            
+            print(f"    完成 ({duration:.1f}s) - 失败")
+            print(f"    错误: {str(e)[:50]}")
+        
+        self._emit('stage_complete', {'stage': 'collection'})
     
     def _stage_reconnaissance(self):
         """阶段 1: 侦察"""
