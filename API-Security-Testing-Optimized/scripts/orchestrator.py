@@ -186,7 +186,9 @@ class EnhancedAgenticOrchestrator:
         max_iterations: int = 100,
         max_duration: float = 3600.0,
         enable_fuzzing: bool = True,
-        enable_testing: bool = True
+        enable_testing: bool = True,
+        use_browser: bool = True,
+        use_collector_chain: bool = True
     ) -> Dict:
         """
         执行增强型编排
@@ -196,17 +198,24 @@ class EnhancedAgenticOrchestrator:
             max_duration: 最大运行时长（秒）
             enable_fuzzing: 是否启用 fuzzing
             enable_testing: 是否启用漏洞测试
+            use_browser: 是否使用无头浏览器采集
+            use_collector_chain: 是否使用采集器联动
         """
         print("=" * 70)
         print(" Enhanced Agentic Security Testing v3.0")
         print("=" * 70)
         print(f"Target: {self.target}")
         print(f"Components: Coordinator + Reasoner + ContextManager + StrategyPool")
+        print(f"Browser: {'Enabled' if use_browser else 'Disabled'}")
+        print(f"Collector Chain: {'Enabled' if use_collector_chain else 'Disabled'}")
         print("=" * 70)
         
         start_time = time.time()
         
-        self._stage_collection()
+        if use_collector_chain and use_browser:
+            self._stage_collection(use_browser=True)
+        elif use_collector_chain:
+            self._stage_collection(use_browser=False)
         
         self.context_manager.set_phase(TestPhase.RECON)
         
@@ -245,7 +254,7 @@ class EnhancedAgenticOrchestrator:
         
         return self._generate_report(duration)
     
-    def _stage_collection(self):
+    def _stage_collection(self, use_browser: bool = True):
         """阶段 0: 采集器联动收集"""
         print("\n[*] Phase 0: 采集器联动收集")
         
@@ -256,7 +265,10 @@ class EnhancedAgenticOrchestrator:
             from .collectors_coordinator import create_coordinator
             
             self.collector_coordinator = create_coordinator(self.target, self.session)
-            collected_data = self.collector_coordinator.collect(use_browser=self.use_browser)
+            collected_data = self.collector_coordinator.collect(
+                use_browser=use_browser,
+                use_fuzzer=True
+            )
             
             summary = self.collector_coordinator.get_summary()
             
@@ -282,6 +294,16 @@ class EnhancedAgenticOrchestrator:
                 )
                 self.context_manager.add_discovered_endpoint(ep)
             
+            # 添加 Fuzz 目标
+            for fuzz_target in collected_data.fuzz_targets:
+                ep = Endpoint(
+                    path=fuzz_target,
+                    method='GET',
+                    source='fuzzer',
+                    score=5
+                )
+                self.context_manager.add_discovered_endpoint(ep)
+            
             for insight in summary.get('insights', []):
                 self._emit('insight_generated', {
                     'type': 'collector',
@@ -297,6 +319,7 @@ class EnhancedAgenticOrchestrator:
                 data={
                     'js_urls': len(collected_data.js_urls),
                     'api_endpoints': len(collected_data.api_endpoints),
+                    'fuzz_targets': len(collected_data.fuzz_targets),
                     'backend_api_base': collected_data.backend_api_base,
                     'collector_stats': collected_data.collector_stats
                 },
@@ -306,6 +329,7 @@ class EnhancedAgenticOrchestrator:
             print(f"    完成 ({duration:.1f}s)")
             print(f"    JS URLs: {len(collected_data.js_urls)}")
             print(f"    API 端点: {len(collected_data.api_endpoints)}")
+            print(f"    Fuzz 目标: {len(collected_data.fuzz_targets)}")
             if collected_data.backend_api_base:
                 print(f"    后端 API: {collected_data.backend_api_base}")
             
