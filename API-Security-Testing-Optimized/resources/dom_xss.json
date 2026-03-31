@@ -1,8 +1,8 @@
 {
   "category": "DOM Cross-Site Scripting (DOM XSS)",
   "version": "3.0",
-  "description": "DOM XSS 专用 payload 库 - 适用于浏览器动态测试",
-  "note": "需要使用浏览器自动化工具 (Playwright/Selenium) 执行这些 payload",
+  "description": "DOM XSS 专用 payload 库（参考示例）",
+  "note": "⚠️ 参考说明：本 payload 库仅供参考，实际测试应根据目标前端框架、sink 点等动态选择和构造 payload。需要使用浏览器自动化工具 (Playwright/Selenium) 执行。",
   "payloads": [
     {
       "id": "dom-001",

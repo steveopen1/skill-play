@@ -1,7 +1,8 @@
 {
   "category": "Cross-Site Scripting (XSS)",
   "version": "2.0",
-  "description": "XSS 测试 payload 库",
+  "description": "XSS 测试 payload 库（参考示例）",
+  "note": "⚠️ 参考说明：本 payload 库仅供参考，实际测试应根据目标防护机制、上下文等动态选择和构造 payload",
   "payloads": [
     {
       "id": "xss-001",
