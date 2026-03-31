@@ -2,413 +2,383 @@
 
 ## 概述
 
-本 skill 提供**自动化接口渗透测试**能力，包含信息采集器、payload 知识库、自动化测试引擎和智能决策系统。
+本 skill 提供**由 Agent 驱动的自动化接口渗透测试**能力，不仅仅是脚本执行，而是具备理解、推理、决策能力的智能系统。
 
-## v3.0 新增功能
+核心组件：
+- **ReasoningEngine** - 多层级推理引擎
+- **ContextManager** - 全维度上下文管理器
+- **StrategyPool** - 动态策略池系统
+- **InsightDrivenLoop** - 洞察驱动测试循环
 
-### 信息采集器 (Collectors)
-- **JS 采集器** - JavaScript 指纹缓存 + Webpack 分析
-- **API 路径发现器** - 25+ 正则规则发现 API 路径
-- **URL/域名采集器** - 域名、Base URL、静态资源发现
-- **浏览器动态采集器** - 无头浏览器动态渲染内容采集
+## v3.0 核心增强: Agentic Reasoning
 
-### 浏览器动态测试引擎
-- **DOM XSS 检测** - 使用浏览器自动化检测客户端 XSS
-- **SPA 路由测试** - 测试 Vue/React/Angular 等 SPA 应用的路由安全
-- **表单交互测试** - 模拟用户填写表单提交检测存储型 XSS
+### 核心理念转变
+
+| 传统方式 | Agentic 方式 |
+|---------|-------------|
+| 脚本执行 | 理解驱动的智能执行 |
+| 固定流程 | 动态策略调整 |
+| 被动扫描 | 主动发现和推理 |
+| 结果输出 | 洞察驱动的闭环学习 |
+
+### 智能推理引擎 (ReasoningEngine)
+
+多层级推理流程：
+
+```mermaid
+graph LR
+    A[原始响应] --> B[Surface Level]
+    B --> C[Context Level]
+    C --> D[Causal Level]
+    D --> E[Strategic Level]
+```
+
+**8 种推理规则：**
+- `internal_ip_discovery` - 内网地址发现 (priority: 110)
+- `waf_detection` - WAF 检测 (priority: 105)
+- `spa_fallback_detection` - SPA Fallback 检测 (priority: 100)
+- `json_request_html_response` - 响应矛盾检测 (priority: 90)
+- `swagger_discovery` - API 文档发现 (priority: 80)
+- `error_leak_detection` - 错误信息泄露 (priority: 70)
+- `auth_detection` - 认证机制检测 (priority: 60)
+- `tech_fingerprint` - 技术栈指纹 (priority: 50)
+
+**四段式洞察输出：**
+```python
+Finding(
+    what="所有 5 个不同路径返回完全相同大小的 HTML (678 字节)",
+    so_what="这是典型的 SPA fallback 行为",
+    why="前端服务器配置了 catch-all 路由",
+    implication="后端 API 不在当前服务器，可能在内网",
+    strategy="1. 从 JS 中提取后端地址 2. 尝试不同端口探测",
+    confidence=0.95
+)
+```
+
+### 上下文管理器 (ContextManager)
+
+**5 大维度：**
+- **TechStackContext** - 技术栈 (前端/后端/数据库/WAF)
+- **NetworkContext** - 网络环境 (可达性/代理/限速)
+- **SecurityContext** - 安全态势 (认证/敏感度/暴露等级)
+- **ContentContext** - 内容特征 (SPA/API文档/错误泄露)
+- **TestProgress** - 测试进度 (阶段/发现/下一步)
+
+### 动态策略池 (StrategyPool)
+
+**8 种预定义策略：**
+| 策略 ID | 名称 | 优先级 | 激活条件 |
+|---------|------|--------|---------|
+| default | 默认测试策略 | 0 | 无 |
+| waf_detected | WAF 绕过策略 | 10 | 检测到 WAF |
+| spa_fallback | SPA 深度分析 | 20 | SPA 模式 |
+| internal_address | 内网代理策略 | 30 | 发现内网地址 |
+| high_value_endpoint | 高价值端点深度测试 | 15 | 端点评分 > 7 |
+| auth_testing | 认证安全专项 | 25 | 认证端点 |
+| rate_limited | 限速自适应策略 | 40 | 被限速 |
+| sensitive_operation | 敏感操作安全策略 | 35 | 敏感操作 |
+
+### 洞察驱动测试循环 (InsightDrivenLoop)
+
+闭环流程：
+```mermaid
+graph LR
+    A[观察] --> B[推理]
+    B --> C[策略选择]
+    C --> D[执行]
+    D --> E[验证]
+    E --> A
+```
+
+**验证器功能：**
+- 预期对比验证
+- 偏差计算
+- 假阴性风险评估
+- 收敛检测
 
 ## 快速开始
 
-### 信息采集
+### 基本用法
 ```bash
-# JS 采集 + API 发现
-skill security-testing collect --target https://target.com --type js
+# 使用增强型 Agentic Orchestrator
+skill security-testing agentic --target https://target.com
 
-# 浏览器动态采集
-skill security-testing collect --target https://target.com --type browser
-
-# 完整采集 (JS + URL + Browser)
-skill security-testing discover --target https://target.com
-```
-
-### 安全测试
-```bash
-# 自动化扫描
+# 运行完整扫描
 skill security-testing scan --target https://target.com --type full
 
 # DOM XSS 测试
 skill security-testing domxss --target https://target.com --browser
 ```
 
+### 编程接口
+```python
+from core.orchestrator import EnhancedAgenticOrchestrator
+
+orch = EnhancedAgenticOrchestrator("https://target.com")
+result = orch.execute(
+    max_iterations=100,
+    max_duration=3600.0
+)
+
+# 获取洞察
+insights = orch.get_insights()
+
+# 获取上下文
+context = orch.get_context()
+```
+
 ## 核心能力
 
-| 能力 | 说明 | 状态 |
+| 能力 | 说明 | 组件 |
 |------|------|------|
-| JS 采集器 | JavaScript 指纹 + Webpack 分析 | ✅ (v3.0) |
-| API 路径发现 | 25+ 正则规则 + AST 解析 | ✅ (v3.0) |
-| URL/域名采集 | 域名、Base URL、静态资源 | ✅ (v3.0) |
-| 浏览器动态采集 | 无头浏览器 + 控制台捕获 | ✅ (v3.0) |
-| DOM XSS 检测 | 客户端 XSS 漏洞发现 | ✅ (v3.0) |
-| SPA 路由测试 | Vue/React/Angular 安全 | ✅ (v3.0) |
-| 自动化测试 | 一键执行完整渗透测试流程 | ✅ |
-| 智能决策 | 根据响应自动调整测试策略 | ✅ |
-| WAF 绕过 | 自动检测并绕过 WAF 防护 | ✅ |
-| 报告生成 | 自动生成详细测试报告 | ✅ |
+| 多层级推理 | Surface→Context→Causal→Strategic | ReasoningEngine |
+| 规则引擎 | 8+ 可扩展推理规则 | ReasoningEngine |
+| 上下文感知 | 5 维度全感知 | ContextManager |
+| 动态策略 | 8 种策略自动切换 | StrategyPool |
+| 闭环测试 | 观察→推理→策略→执行→验证 | TestingLoop |
+| 人机交互 | 暂停确认、推理解释 | All Components |
 
 ## 目录结构
 
 ```
 security-testing/
-├── SKILL.md                          # 本文件 - 入口与索引
-├── core/                             # 核心引擎
-│   ├── api_tester.py                # API 测试引擎
+├── SKILL.md                          # 本文件
+├── core/
+│   ├── orchestrator.py              # 增强型编排器 (v3.0)
+│   ├── reasoning_engine.py          # 推理引擎 (NEW)
+│   ├── context_manager.py          # 上下文管理器 (NEW)
+│   ├── strategy_pool.py           # 策略池系统 (NEW)
+│   ├── testing_loop.py             # 洞察驱动循环 (NEW)
+│   ├── api_tester.py              # API 测试引擎
 │   ├── browser_tester.py            # 浏览器动态测试引擎
-│   ├── payload_loader.py            # Payload 加载器
-│   ├── response_analyzer.py         # 响应分析器
-│   ├── report_generator.py          # 报告生成器
-│   └── collectors/                   # 信息采集器 (v3.0 新增)
-│       ├── __init__.py
-│       ├── js_collector.py          # JS 采集器
-│       ├── api_path_finder.py        # API 路径发现器
-│       ├── url_collector.py          # URL/域名采集器
-│       └── browser_collector.py      # 浏览器动态采集器
-├── payloads/                         # 结构化 payload 库
-│   ├── sqli.json                    # SQL 注入 payload
-│   ├── xss.json                     # XSS payload
-│   ├── dom_xss.json                 # DOM XSS payload (NEW!)
-│   ├── rce.json                     # RCE payload
-│   └── auth.json                    # 认证测试 payload
-├── workflows/                        # 测试流程定义
-│   ├── api_discovery.yaml
-│   ├── auth_test.yaml
-│   └── vulnerability_scan.yaml
-└── reports/                          # 测试报告输出
+│   └── collectors/                   # 信息采集器
+├── payloads/
+│   ├── sqli.json                   # SQL 注入 (25+ payload)
+│   ├── xss.json                    # XSS (25+ payload)
+│   ├── dom_xss.json                # DOM XSS (20 payload)
+│   └── auth.json                   # 认证测试
+└── workflows/
+    └── api_test.yaml               # API 测试流程
 ```
 
-## 自动化测试流程
+## API 参考
 
-### 阶段 1: 信息收集
-```yaml
-name: 信息收集
-tasks:
-  - scan_endpoints: 扫描 API 端点
-  - identify_methods: 识别 HTTP 方法
-  - detect_auth: 检测认证机制
-  - fingerprint_tech: 识别技术栈
-```
+### ReasoningEngine
 
-### 阶段 2: 认证测试
-```yaml
-name: 认证测试
-tasks:
-  - test_default_credentials: 测试默认密码
-  - test_auth_bypass: 测试认证绕过
-  - test_jwt_weakness: 测试 JWT 弱点
-  - test_session_management: 测试会话管理
-```
-
-### 阶段 3: 漏洞测试
-```yaml
-name: 漏洞测试
-tasks:
-  - test_sqli: SQL 注入测试
-  - test_xss: XSS 测试
-  - test_command_injection: 命令注入
-  - test_path_traversal: 路径遍历
-  - test_idor: IDOR 测试
-  - test_rate_limiting: 速率限制测试
-```
-
-### 阶段 4: 报告生成
-```yaml
-name: 报告生成
-tasks:
-  - generate_summary: 生成执行摘要
-  - export_results: 导出结果
-  - create_remediation: 生成修复建议
-```
-
-## 信息采集器 (Collectors)
-
-### JS 采集器 (js_collector.py)
 ```python
-from collectors import JSCollector
+from core.reasoning_engine import create_reasoner
 
-collector = JSCollector(max_depth=3)
-cache = collector.collect("https://target.com")
+reasoner = create_reasoner()
 
-# 获取解析结果
-for js_url, result in cache._cache.items():
-    print(f"端点: {result.endpoints}")
-    print(f"参数: {result.parameter_names}")
-    print(f"路由: {result.routes}")
-    print(f"父路径: {result.parent_paths}")
+# 观察并推理
+response_data = {
+    'url': 'https://target.com/api',
+    'method': 'GET',
+    'status_code': 200,
+    'content_type': 'text/html',
+    'content': '<!DOCTYPE html>...',
+    'source': 'recon'
+}
+
+insights = reasoner.observe_and_reason(response_data)
+
+# 获取活跃洞察
+active_insights = reasoner.insight_store.get_active()
+
+# 推理规则
+for rule in reasoner.rules:
+    print(f"{rule.name}: {rule.level.value}")
 ```
 
-### API 路径发现器 (api_path_finder.py)
+### ContextManager
+
 ```python
-from collectors import ApiPathFinder
+from core.context_manager import create_context_manager, TestPhase
 
-finder = ApiPathFinder()
-apis = finder.find_api_paths_in_text(js_content, source="js")
+cm = create_context_manager("https://target.com")
 
-print(f"发现 {len(apis)} 个 API")
-print(f"父路径: {finder.get_parent_paths()}")
-print(f"资源名: {finder.get_resource_names()}")
+# 更新技术栈
+cm.update_tech_stack({'frontend': {'vue'}, 'backend': {'spring'}})
 
-# 生成 Fuzz 目标
-fuzz_targets = finder.generate_fuzz_targets(
-    parent_paths=finder.get_parent_paths(),
-    resources=finder.get_resource_names()
-)
+# 设置 SPA 模式
+cm.set_spa_mode(True, fallback_size=678)
+
+# 标记内网地址
+cm.mark_internal_address("10.0.0.1", source="js_analysis")
+
+# 获取上下文摘要
+summary = cm.get_summary()
+
+# 保存/恢复
+cm.save_to_file("context.json")
 ```
 
-### URL 采集器 (url_collector.py)
+### StrategyPool
+
 ```python
-from collectors import URLCollector
+from core.strategy_pool import create_strategy_pool, StrategyContext
 
-collector = URLCollector()
-result = collector.collect_from_html(html, base_url)
+pool = create_strategy_pool()
 
-print(f"域名: {result.domains}")
-print(f"子域名: {result.subdomains}")
-print(f"Base URLs: {result.base_urls}")
-print(f"API URLs: {result.api_urls}")
-print(f"静态资源: {result.static_urls}")
-```
-
-### 浏览器动态采集器 (browser_collector.py)
-```python
-from collectors import BrowserCollectorFacade
-
-facade = BrowserCollectorFacade(headless=True)
-result = facade.collect_all("https://target.com", {
-    'interactions': [
-        {'type': 'click', 'selector': '.btn'},
-        {'type': 'fill', 'data': {'username': 'admin'}},
-    ],
-    'capture_console': True,
-    'capture_storage': True,
+# 创建策略上下文
+context = StrategyContext({
+    'is_spa': True,
+    'waf_detected': 'aliyun',
+    'network_status': 'normal',
+    'endpoint_score': 8,
+    'insight_types': ['spa_fallback', 'waf_detected']
 })
 
-print(f"JS URLs: {len(result['js_urls'])}")
-print(f"API 请求: {len(result['api_requests'])}")
-print(f"WebSocket: {len(result['websocket_connections'])}")
-print(f"控制台: {len(result['console_logs'])}")
+# 选择策略
+strategy = pool.select_strategy(context)
+
+# 获取摘要
+summary = pool.get_summary()
 ```
 
-## Payload 库
+### InsightDrivenLoop
 
-### SQL 注入 Payload
-```json
-{
-  "category": "SQL Injection",
-  "payloads": [
-    {
-      "name": "OR 1=1",
-      "payload": "' OR '1'='1",
-      "type": "boolean_based",
-      "detection_pattern": ["welcome", "admin", "success"],
-      "waf_bypass": ["' OR 1=1--", "' OR 1=1#"]
-    },
-    {
-      "name": "UNION SELECT",
-      "payload": "' UNION SELECT NULL,NULL,NULL--",
-      "type": "union_based",
-      "columns_test": [1, 2, 3, 4, 5, 10, 20]
-    }
-  ]
-}
-```
-
-### XSS Payload
-```json
-{
-  "category": "XSS",
-  "payloads": [
-    {
-      "name": "Basic Script",
-      "payload": "<script>alert(1)</script>",
-      "type": "reflected"
-    },
-    {
-      "name": "Image OnError",
-      "payload": "<img src=x onerror=alert(1)>",
-      "type": "reflected",
-      "waf_bypass": ["<img src=x onerror=alert(1)>", "<svg onload=alert(1)>"]
-    }
-  ]
-}
-```
-
-## 智能决策系统
-
-### WAF 检测与绕过
 ```python
-def detect_waf(response):
-    waf_signatures = {
-        '360': '360waf',
-        'aliyun': 'aliyuncs.com',
-        'tencent': 'tencent-cloud.net'
-    }
-    for waf, signature in waf_signatures.items():
-        if signature in response.text:
-            return waf
-    return None
+from core.testing_loop import create_test_loop, TestAction
 
-def get_bypass_methods(waf_name):
-    bypass_db = {
-        '360': ['%20', '%09', '%0a', '/**/'],
-        'aliyun': ['%2520', '%2509', 'unicode']
-    }
-    return bypass_db.get(waf_name, [])
-```
+loop = create_test_loop(reasoner, strategist, context_manager)
 
-### 响应分析
-```python
-def analyze_response(response, baseline):
-    diff = {
-        'status_code_changed': response.status_code != baseline['status_code'],
-        'content_length_diff': abs(len(response.content) - baseline['content_length']),
-        'content_changed': response.text != baseline['text']
-    }
-    
-    if diff['content_length_diff'] > 100 or diff['status_code_changed']:
-        return 'potential_vulnerability'
-    return 'normal'
+# 添加测试动作
+loop.add_action(TestAction(
+    id='test_1',
+    type='GET',
+    target='https://target.com/api',
+    priority=10,
+    expected_outcome='2xx'
+))
+
+# 运行循环
+report = loop.run(max_iterations=100)
+
+# 获取进度
+progress = loop.get_progress()
 ```
 
 ## 使用示例
 
-### 示例 1: 单接口测试
-```bash
-skill security-testing sqli \
-  --target https://target.com/api/user \
-  --param id \
-  --method GET
+### 示例 1: Agentic 扫描
+
+```python
+from core.orchestrator import run_enhanced_agentic_test
+
+result = run_enhanced_agentic_test(
+    target="https://target.com",
+    max_iterations=100,
+    max_duration=3600.0
+)
+
+print(f"状态: {result['state']}")
+print(f"洞察数: {len(result['insights'])}")
+print(f"阻碍因素: {len(result['blockers'])}")
 ```
 
-### 示例 2: 完整扫描
-```bash
-skill security-testing scan \
-  --target https://target.com \
-  --type full \
-  --output ./reports/ \
-  --threads 5
+### 示例 2: 自定义推理
+
+```python
+from core.reasoning_engine import Reasoner, InsightType
+
+reasoner = Reasoner()
+
+# 添加自定义规则
+def my_condition(obs, history):
+    return 'sensitive' in obs.url.lower()
+
+def my_finding_builder(obs, history):
+    from core.reasoning_engine import Finding, UnderstandingLevel
+    return Finding(
+        what=f"访问敏感路径: {obs.url}",
+        so_what="发现敏感 API 端点",
+        why="路径包含敏感关键字",
+        implication="需要详细测试",
+        strategy="启用敏感操作安全策略",
+        confidence=0.9,
+        level=UnderstandingLevel.STRATEGIC
+    )
+
+reasoner.register_rule(ReasoningRule(
+    name="sensitive_endpoint",
+    description="敏感端点检测",
+    level=UnderstandingLevel.STRATEGIC,
+    condition=my_condition,
+    findings_builder=my_finding_builder,
+    priority=120
+))
 ```
 
-### 示例 3: 认证测试
-```bash
-skill security-testing auth \
-  --target https://target.com/login \
-  --username admin \
-  --password-list ./passwords.txt
+### 示例 3: 策略调优
+
+```python
+from core.strategy_pool import StrategyPool
+
+pool = StrategyPool()
+
+# 调整策略优先级
+strategy = pool.get_strategy('waf_detected')
+strategy.priority = 25  # 提高优先级
+
+# 记录策略效果
+pool.record_outcome('waf_detected', success=True, effectiveness=0.8)
 ```
 
-## 工具集成
+## 洞察类型
 
-### SQLMap 集成
-```yaml
-integration:
-  name: sqlmap
-  command: "sqlmap -u {url} --data={data} --batch --output-dir={output}"
-  parser: sqlmap_output_parser
-```
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| OBSERVATION | 观察到的事实 | 检测到 WAF 特征 |
+| PATTERN | 发现的模式 | SPA fallback 行为 |
+| INFERENCE | 推断 | 前后端分离架构 |
+| BLOCKER | 阻碍因素 | 后端不可达 |
+| OPPORTUNITY | 机会 | 发现 API 文档 |
+| STRATEGY_CHANGE | 策略调整 | 切换到 WAF 绕过模式 |
 
-### Nuclei 集成
-```yaml
-integration:
-  name: nuclei
-  command: "nuclei -u {url} -t {templates} -o {output}"
-  parser: nuclei_output_parser
-```
+## 配置选项
 
-## 报告格式
-
-### Markdown 报告
-```markdown
-# 渗透测试报告
-
-## 执行摘要
-- 测试目标：https://target.com
-- 测试时间：2026-03-30
-- 测试接口数：50
-
-## 漏洞统计
-- 🔴 严重：2
-- 🟠 高危：5
-- 🟡 中危：10
-- 🟢 低危：20
-
-## 详细结果
-...
-```
-
-### JSON 报告
-```json
-{
-  "target": "https://target.com",
-  "timestamp": "2026-03-30T12:00:00Z",
-  "vulnerabilities": [
-    {
-      "type": "sqli",
-      "severity": "critical",
-      "endpoint": "/api/user",
-      "payload": "' OR '1'='1",
-      "evidence": "..."
-    }
-  ]
-}
-```
-
-## 快速索引
-
-### 按漏洞类型
-
-| 漏洞类型 | Payload 文件 | 测试流程 | WAF 绕过 |
-|----------|-------------|---------|---------|
-| SQL 注入 | `payloads/sqli.json` | `workflows/sqli_test.yaml` | ✅ |
-| XSS | `payloads/xss.json` | `workflows/xss_test.yaml` | ✅ |
-| RCE | `payloads/rce.json` | `workflows/rce_test.yaml` | ✅ |
-| 认证绕过 | `payloads/auth.json` | `workflows/auth_test.yaml` | ✅ |
-| IDOR | `payloads/business_logic.json` | `workflows/idor_test.yaml` | ✅ |
-
-### 按测试阶段
-
-| 阶段 | 流程文件 | 说明 |
-|------|---------|------|
-| 信息收集 | `workflows/api_discovery.yaml` | 发现 API 端点 |
-| 认证测试 | `workflows/auth_test.yaml` | 测试认证机制 |
-| 漏洞扫描 | `workflows/vulnerability_scan.yaml` | 全面漏洞扫描 |
-| 报告生成 | `workflows/report_gen.yaml` | 生成测试报告 |
-
-## 配置示例
-
-### 配置文件
 ```yaml
 # config.yaml
-target: https://target.com
-threads: 5
-timeout: 30
-user_agent: "Mozilla/5.0 (compatible; SecurityTesting/2.0)"
-rate_limit: 10  # 每秒请求数
-waf_bypass: true
-save_state: true
-output:
-  format: [markdown, json]
-  directory: ./reports/
+agentic:
+  enabled: true
+  max_iterations: 100
+  max_duration: 3600
+  convergence_threshold: 0.8
+  
+reasoning:
+  rules:
+    - spa_fallback_detection
+    - waf_detection
+    - internal_ip_discovery
+    
+context:
+  tech_stack_detection: true
+  network_monitoring: true
+  security_analysis: true
+  
+strategy:
+  auto_switch: true
+  waf_bypass_enabled: true
+  rate_limit_adaptation: true
 ```
 
 ## 更新日志
 
+### v3.0 (2026-03-31)
+- ✅ Agentic Reasoning Engine - 多层级推理引擎
+- ✅ Context Manager - 全维度上下文感知
+- ✅ Strategy Pool - 8 种动态策略
+- ✅ Insight-Driven Loop - 闭环测试循环
+- ✅ Enhanced Orchestrator - 集成所有组件
+
 ### v2.0 (2026-03-30)
-- ✅ 添加自动化测试引擎
-- ✅ 添加智能决策系统
-- ✅ 添加结构化 payload 库
-- ✅ 添加 WAF 检测与绕过
-- ✅ 添加报告生成器
-- ✅ 添加并行测试支持
-- ✅ 集成 SQLMap/Nuclei
+- ✅ 自动化测试引擎
+- ✅ 智能决策系统
+- ✅ 结构化 payload 库 (50+)
+- ✅ WAF 检测与绕过
+- ✅ 报告生成器
+- ✅ 并行测试支持
 
 ### v1.0 (原始版本)
 - 基础 payload 知识库
@@ -417,7 +387,7 @@ output:
 
 ---
 
-*Skill 版本：v2.0*
-*更新时间：2026-03-30*
+*Skill 版本：v3.0*
+*更新时间：2026-03-31*
 *维护者：Security Team*
 *GitHub: https://github.com/steveopen1/skill-play*
