@@ -1,41 +1,59 @@
-# Payloader Skill - 渗透测试辅助平台 v2.0
+# Payloader Skill - 渗透测试辅助平台 v3.0
 
 ## 概述
 
-本 skill 提供**自动化接口渗透测试**能力，包含 payload 知识库、自动化测试引擎和智能决策系统。
+本 skill 提供**自动化接口渗透测试**能力，包含信息采集器、payload 知识库、自动化测试引擎和智能决策系统。
+
+## v3.0 新增功能
+
+### 信息采集器 (Collectors)
+- **JS 采集器** - JavaScript 指纹缓存 + Webpack 分析
+- **API 路径发现器** - 25+ 正则规则发现 API 路径
+- **URL/域名采集器** - 域名、Base URL、静态资源发现
+- **浏览器动态采集器** - 无头浏览器动态渲染内容采集
+
+### 浏览器动态测试引擎
+- **DOM XSS 检测** - 使用浏览器自动化检测客户端 XSS
+- **SPA 路由测试** - 测试 Vue/React/Angular 等 SPA 应用的路由安全
+- **表单交互测试** - 模拟用户填写表单提交检测存储型 XSS
 
 ## 快速开始
 
-### 基础使用
+### 信息采集
 ```bash
-# 1. 信息收集
+# JS 采集 + API 发现
+skill security-testing collect --target https://target.com --type js
+
+# 浏览器动态采集
+skill security-testing collect --target https://target.com --type browser
+
+# 完整采集 (JS + URL + Browser)
 skill security-testing discover --target https://target.com
-
-# 2. 自动化测试
-skill security-testing scan --target https://target.com --type api
-
-# 3. 生成报告
-skill security-testing report --output ./reports/
 ```
 
-### 作为 Skill 调用
-```python
-# 在 OpenClaw 中调用
-skill security-testing sqli --target https://target.com/api/user
-skill security-testing xss --target https://target.com/search
-skill security-testing auth --target https://target.com/login
+### 安全测试
+```bash
+# 自动化扫描
+skill security-testing scan --target https://target.com --type full
+
+# DOM XSS 测试
+skill security-testing domxss --target https://target.com --browser
 ```
 
 ## 核心能力
 
 | 能力 | 说明 | 状态 |
 |------|------|------|
+| JS 采集器 | JavaScript 指纹 + Webpack 分析 | ✅ (v3.0) |
+| API 路径发现 | 25+ 正则规则 + AST 解析 | ✅ (v3.0) |
+| URL/域名采集 | 域名、Base URL、静态资源 | ✅ (v3.0) |
+| 浏览器动态采集 | 无头浏览器 + 控制台捕获 | ✅ (v3.0) |
+| DOM XSS 检测 | 客户端 XSS 漏洞发现 | ✅ (v3.0) |
+| SPA 路由测试 | Vue/React/Angular 安全 | ✅ (v3.0) |
 | 自动化测试 | 一键执行完整渗透测试流程 | ✅ |
 | 智能决策 | 根据响应自动调整测试策略 | ✅ |
 | WAF 绕过 | 自动检测并绕过 WAF 防护 | ✅ |
-| 上下文感知 | 记住测试状态和进度 | ✅ |
 | 报告生成 | 自动生成详细测试报告 | ✅ |
-| 并行测试 | 同时测试多个目标 | ✅ |
 
 ## 目录结构
 
@@ -44,22 +62,26 @@ security-testing/
 ├── SKILL.md                          # 本文件 - 入口与索引
 ├── core/                             # 核心引擎
 │   ├── api_tester.py                # API 测试引擎
+│   ├── browser_tester.py            # 浏览器动态测试引擎
 │   ├── payload_loader.py            # Payload 加载器
 │   ├── response_analyzer.py         # 响应分析器
-│   └── report_generator.py          # 报告生成器
+│   ├── report_generator.py          # 报告生成器
+│   └── collectors/                   # 信息采集器 (v3.0 新增)
+│       ├── __init__.py
+│       ├── js_collector.py          # JS 采集器
+│       ├── api_path_finder.py        # API 路径发现器
+│       ├── url_collector.py          # URL/域名采集器
+│       └── browser_collector.py      # 浏览器动态采集器
 ├── payloads/                         # 结构化 payload 库
-│   ├── sqli.json
-│   ├── xss.json
-│   ├── rce.json
-│   ├── auth.json
-│   └── business_logic.json
+│   ├── sqli.json                    # SQL 注入 payload
+│   ├── xss.json                     # XSS payload
+│   ├── dom_xss.json                 # DOM XSS payload (NEW!)
+│   ├── rce.json                     # RCE payload
+│   └── auth.json                    # 认证测试 payload
 ├── workflows/                        # 测试流程定义
 │   ├── api_discovery.yaml
 │   ├── auth_test.yaml
 │   └── vulnerability_scan.yaml
-├── data/                             # 原始数据（兼容旧版）
-│   ├── web/                         # Web 应用攻防
-│   └── intranet/                    # 内网渗透
 └── reports/                          # 测试报告输出
 ```
 
@@ -104,6 +126,75 @@ tasks:
   - generate_summary: 生成执行摘要
   - export_results: 导出结果
   - create_remediation: 生成修复建议
+```
+
+## 信息采集器 (Collectors)
+
+### JS 采集器 (js_collector.py)
+```python
+from collectors import JSCollector
+
+collector = JSCollector(max_depth=3)
+cache = collector.collect("https://target.com")
+
+# 获取解析结果
+for js_url, result in cache._cache.items():
+    print(f"端点: {result.endpoints}")
+    print(f"参数: {result.parameter_names}")
+    print(f"路由: {result.routes}")
+    print(f"父路径: {result.parent_paths}")
+```
+
+### API 路径发现器 (api_path_finder.py)
+```python
+from collectors import ApiPathFinder
+
+finder = ApiPathFinder()
+apis = finder.find_api_paths_in_text(js_content, source="js")
+
+print(f"发现 {len(apis)} 个 API")
+print(f"父路径: {finder.get_parent_paths()}")
+print(f"资源名: {finder.get_resource_names()}")
+
+# 生成 Fuzz 目标
+fuzz_targets = finder.generate_fuzz_targets(
+    parent_paths=finder.get_parent_paths(),
+    resources=finder.get_resource_names()
+)
+```
+
+### URL 采集器 (url_collector.py)
+```python
+from collectors import URLCollector
+
+collector = URLCollector()
+result = collector.collect_from_html(html, base_url)
+
+print(f"域名: {result.domains}")
+print(f"子域名: {result.subdomains}")
+print(f"Base URLs: {result.base_urls}")
+print(f"API URLs: {result.api_urls}")
+print(f"静态资源: {result.static_urls}")
+```
+
+### 浏览器动态采集器 (browser_collector.py)
+```python
+from collectors import BrowserCollectorFacade
+
+facade = BrowserCollectorFacade(headless=True)
+result = facade.collect_all("https://target.com", {
+    'interactions': [
+        {'type': 'click', 'selector': '.btn'},
+        {'type': 'fill', 'data': {'username': 'admin'}},
+    ],
+    'capture_console': True,
+    'capture_storage': True,
+})
+
+print(f"JS URLs: {len(result['js_urls'])}")
+print(f"API 请求: {len(result['api_requests'])}")
+print(f"WebSocket: {len(result['websocket_connections'])}")
+print(f"控制台: {len(result['console_logs'])}")
 ```
 
 ## Payload 库
