@@ -1,7 +1,7 @@
 # API 接口渗透测试工作流
 
 name: API 接口渗透测试
-version: 2.0
+version: 3.0
 description: 自动化 API 接口渗透测试流程
 
 stages:
