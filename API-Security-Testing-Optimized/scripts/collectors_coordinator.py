@@ -296,13 +296,51 @@ class CollectorsCoordinator:
         try:
             # 导航到目标
             self._browser_collector.navigate(self.target)
-            time.sleep(2)
+            time.sleep(3)
             
             # 获取动态 JS URLs
             dynamic_js = self._browser_collector.get_dynamic_js_urls()
+            new_js_count = 0
             for js in dynamic_js:
                 if js not in self.data.js_urls:
                     self.data.js_urls.append(js)
+                    new_js_count += 1
+                    
+                    # 立即分析新获取的 JS
+                    try:
+                        js_resp = self.session.get(js, timeout=10)
+                        if js_resp.status_code == 200:
+                            content = js_resp.text
+                            self.data.js_contents[js] = content
+                            
+                            # ApiPathFinder 提取 API 路径
+                            if self._api_path_finder:
+                                apis = self._api_path_finder.find_api_paths_in_text(content, js)
+                                for api in apis:
+                                    self.data.api_endpoints.append({
+                                        'method': getattr(api, 'method', 'GET'),
+                                        'path': getattr(api, 'path', ''),
+                                        'source': 'browser_js'
+                                    })
+                            
+                            # 直接正则提取
+                            endpoints = self._extract_endpoints_from_js(content)
+                            self.data.api_endpoints.extend(endpoints)
+                            
+                            # 提取后端 API 地址
+                            api_base = self._extract_api_base(content)
+                            if api_base and not self.data.backend_api_base:
+                                self.data.backend_api_base = api_base
+                                self.data.insights.append(f"发现后端 API: {api_base}")
+                            
+                            # 提取内网 IP
+                            ips = self._extract_internal_ips(content)
+                            self.data.internal_ips.extend(ips)
+                    
+                    except Exception as e:
+                        logger.debug(f"Browser JS 分析失败 {js}: {e}")
+            
+            logger.info(f"[Browser] 获取 {new_js_count} 个新 JS, 共 {len(dynamic_js)} 个")
             
             # 获取 API 请求
             api_requests = self._browser_collector.get_api_requests()

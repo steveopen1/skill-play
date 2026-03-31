@@ -109,7 +109,12 @@ class HeadlessBrowserCollector:
             )
             self.resources.append(resource)
             
+            # 捕获所有 JS 类型的资源
             if request.resource_type == 'script':
+                self.js_urls.add(request.url)
+            
+            # 同时捕获动态加载的 JS 文件（chunk JS 通过 XHR 加载）
+            if '.js' in request.url.lower() or '/chunk-' in request.url:
                 self.js_urls.add(request.url)
             
             if request.resource_type in ['xhr', 'fetch']:
