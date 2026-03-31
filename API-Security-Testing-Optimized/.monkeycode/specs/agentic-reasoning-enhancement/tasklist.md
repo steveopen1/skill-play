@@ -8,19 +8,19 @@
 
 ### Phase 1: 核心架构重构
 
-- [ ] **T1.1** 创建增强版推理引擎 `core/reasoning_engine.py`
+- [x] **T1.1** 创建增强版推理引擎 `core/reasoning_engine.py`
   - 实现多层级推理流程 (Surface → Context → Causal → Strategic)
   - 实现推理规则引擎和规则注册机制
   - 实现置信度计算算法
   - 创建 `Finding` 和 `Insight` 数据类
 
-- [ ] **T1.2** 创建上下文管理器 `core/context_manager.py`
+- [x] **T1.2** 创建上下文管理器 `core/context_manager.py`
   - 实现 `GlobalContext` 数据结构
   - 实现 `TechStackContext`, `NetworkContext`, `SecurityContext`, `ContentContext`
   - 实现上下文更新和查询接口
   - 实现上下文持久化和恢复
 
-- [ ] **T1.3** 创建策略池系统 `core/strategy_pool.py`
+- [x] **T1.3** 创建策略池系统 `core/strategy_pool.py`
   - 定义策略数据结构 `Strategy`, `Condition`, `Action`
   - 实现预定义策略库（8种策略）
   - 实现策略选择算法
@@ -28,104 +28,43 @@
 
 ### Phase 2: 推理深度增强
 
-- [ ] **T2.1** 实现 SPA Fallback 推理规则
-  - 检测特征：相同大小 HTML、多个路径返回相同内容
-  - 生成四段式洞察：what/so_what/why/implication/strategy
-
-- [ ] **T2.2** 实现内网地址发现推理规则
-  - 从响应中提取内网 IP 和域名
-  - 识别前后端分离架构
-
-- [ ] **T2.3** 实现 WAF 检测推理规则
-  - 检测常见 WAF 签名
-  - 生成绕过策略建议
-
-- [ ] **T2.4** 实现响应矛盾检测
-  - 请求 JSON 返回 HTML
-  - 请求 API 返回错误页面
-
-- [ ] **T2.5** 实现模式识别引擎
-  - 从多个观察中提取共性模式
-  - 基于历史数据学习新模式
+- [x] **T2.1** 实现 SPA Fallback 推理规则 (已集成于 reasoning_engine.py)
+- [x] **T2.2** 实现内网地址发现推理规则 (已集成于 reasoning_engine.py)
+- [x] **T2.3** 实现 WAF 检测推理规则 (已集成于 reasoning_engine.py)
+- [x] **T2.4** 实现响应矛盾检测 (已集成于 reasoning_engine.py)
+- [x] **T2.5** 实现模式识别引擎 (已集成于 reasoning_engine.py)
 
 ### Phase 3: 动态策略调整
 
-- [ ] **T3.1** 实现策略切换状态机
-  - 定义状态转换规则
-  - 实现状态持久化
+- [x] **T3.1** 实现策略切换状态机 (已集成于 strategy_pool.py)
 
-- [ ] **T3.2** 实现 WAF 绕过策略
-  - 编码混淆 payload
-  - 分块传输
-  - 注释插入
-
-- [ ] **T3.3** 实现限速自适应策略
-  - 检测连续失败
-  - 动态调整请求速率
-  - User-Agent 轮换
-
-- [ ] **T3.4** 实现高价值端点策略
-  - 端点评分算法
-  - 深度测试执行
-
-- [ ] **T3.5** 实现敏感操作安全策略
-  - 最小化测试原则
-  - 模拟正常用法
+- [x] **T3.2** 实现 WAF 绕过策略 (已集成于 strategy_pool.py)
+- [x] **T3.3** 实现限速自适应策略 (已集成于 strategy_pool.py)
+- [x] **T3.4** 实现高价值端点策略 (已集成于 strategy_pool.py)
+- [x] **T3.5** 实现敏感操作安全策略 (已集成于 strategy_pool.py)
 
 ### Phase 4: 上下文感知增强
 
-- [ ] **T4.1** 实现技术栈指纹识别
-  - 前端框架检测 (Vue/React/Angular)
-  - 后端技术检测
-  - 数据库检测
-
-- [ ] **T4.2** 实现网络环境感知
-  - 连通性检测
-  - 代理配置检测
-  - DNS 解析检测
-
-- [ ] **T4.3** 实现安全态势感知
-  - 认证类型识别
-  - 敏感端点标记
-  - 暴露等级评估
-
-- [ ] **T4.4** 实现内容特征感知
-  - SPA 检测
-  - API 文档发现
-  - 错误信息泄露检测
+- [x] **T4.1** 实现技术栈指纹识别 (已集成于 reasoning_engine.py)
+- [x] **T4.2** 实现网络环境感知 (已集成于 context_manager.py)
+- [x] **T4.3** 实现安全态势感知 (已集成于 context_manager.py)
+- [x] **T4.4** 实现内容特征感知 (已集成于 context_manager.py)
 
 ### Phase 5: 测试循环与验证
 
-- [ ] **T5.1** 实现洞察驱动循环
-  - 观察 → 推理 → 策略 → 执行 → 验证闭环
-  - 结果反馈机制
-
-- [ ] **T5.2** 实现验证器
-  - 预期对比验证
-  - 偏差计算
-  - 新洞察生成
-
-- [ ] **T5.3** 实现收敛检测
-  - 测试进度评估
-  - 假阴性风险警告
+- [x] **T5.1** 实现洞察驱动循环 (已集成于 testing_loop.py)
+- [x] **T5.2** 实现验证器 (已集成于 testing_loop.py)
+- [x] **T5.3** 实现收敛检测 (已集成于 testing_loop.py)
 
 ### Phase 6: 人机交互
 
-- [ ] **T6.1** 实现暂停确认机制
-  - 高危漏洞发现时暂停
-  - 策略切换时确认
-
-- [ ] **T6.2** 实现推理解释接口
-  - 生成人类可读的推理过程
-  - 提供决策依据说明
-
-- [ ] **T6.3** 实现用户偏好记忆
-  - 记录用户否决的策略
-  - 适应用户偏好
+- [x] **T6.1** 实现暂停确认机制 (已集成于 testing_loop.py)
+- [x] **T6.2** 实现推理解释接口 (已集成于 reasoning_engine.py Insight.to_dict)
+- [x] **T6.3** 实现用户偏好记忆 (已集成于 context_manager.py user_preferences)
 
 ### Phase 7: 集成与测试
 
-- [ ] **T7.1** 更新 orchestrator.py
+- [x] **T7.1** 更新 orchestrator.py
   - 集成新的推理引擎
   - 集成策略池系统
   - 集成上下文管理器
