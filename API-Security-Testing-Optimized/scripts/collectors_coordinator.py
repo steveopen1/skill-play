@@ -294,6 +294,11 @@ class CollectorsCoordinator:
         logger.info("[Browser] 开始无头浏览器采集...")
         
         try:
+            # 启动浏览器
+            if not self._browser_collector.start():
+                logger.warning("[Browser] 浏览器启动失败")
+                return 0
+            
             # 导航到目标
             self._browser_collector.navigate(self.target)
             time.sleep(3)
@@ -342,17 +347,37 @@ class CollectorsCoordinator:
             
             logger.info(f"[Browser] 获取 {new_js_count} 个新 JS, 共 {len(dynamic_js)} 个")
             
-            # 获取 API 请求
+            # 获取 API 请求（页面初始加载）
             api_requests = self._browser_collector.get_api_requests()
+            logger.info(f"[Browser] 初始 API 请求: {len(api_requests)}")
             self.data.api_requests.extend(api_requests)
             
-            # 尝试与页面交互
-            self._browser_collector.click_and_intercept(['button', 'a', 'input'])
-            time.sleep(1)
+            # 尝试与页面交互，触发更多请求
+            try:
+                # 尝试点击按钮（如果有点击行为）
+                self._browser_collector.click_and_intercept('button')
+                time.sleep(1)
+                
+                # 尝试直接使用 Playwright API 填写表单
+                try:
+                    self._browser_collector.page.fill("input[type='text']", "admin")
+                    self._browser_collector.page.fill("input[type='password']", "admin")
+                    time.sleep(0.5)
+                    self._browser_collector.page.click("button[type='button']")
+                    time.sleep(3)
+                    logger.info("[Browser] 表单交互完成")
+                except Exception as e:
+                    logger.debug(f"Browser 表单填写失败: {e}")
+                    
+            except Exception as e:
+                logger.debug(f"Browser 交互失败: {e}")
             
-            # 再次获取请求
+            # 获取交互后的请求
             more_requests = self._browser_collector.get_api_requests()
-            self.data.api_requests.extend(more_requests)
+            logger.info(f"[Browser] 交互后 API 请求: {len(more_requests)}")
+            for req in more_requests:
+                if req.url not in [getattr(r, 'url', None) for r in self.data.api_requests]:
+                    self.data.api_requests.append(req)
             
             # 获取 WebSocket 连接
             ws = self._browser_collector.get_websocket_connections()
