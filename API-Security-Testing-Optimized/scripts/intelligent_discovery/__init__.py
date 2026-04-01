@@ -23,6 +23,7 @@ from .learning_engine import LearningEngine, create_learning_engine
 from .insight_generator import InsightGenerator, create_insight_generator
 from .strategy_generator import StrategyGenerator, create_strategy_generator
 from .environment import EnvironmentChecker
+from .auth_bypass import AuthBypass, create_auth_bypass
 from .models import (
     DiscoveryContext, Endpoint, Observation, Insight, Strategy, Action,
     NetworkRequest, Pattern, PageStructure, TechStack, AuthInfo,
@@ -51,6 +52,8 @@ __all__ = [
     
     # Environment
     'EnvironmentChecker',
+    'AuthBypass',
+    'create_auth_bypass',
     
     # Models
     'DiscoveryContext',

@@ -27,6 +27,7 @@ from .models import (
 from .agent_brain import AgentBrain, create_agent_brain
 from .context_manager import ContextManager, create_context_manager
 from .environment import EnvironmentChecker
+from .auth_bypass import AuthBypass, create_auth_bypass
 from .collectors import (
     BrowserCollector, SourceAnalyzer, ResponseAnalyzer,
     create_browser_collector
@@ -196,6 +197,11 @@ class DiscoveryOrchestrator:
                 print("\n[*] Pre-scanning common API endpoints...")
                 await self._probe_common_endpoints()
             
+            # 认证绕过阶段：尝试常见弱口令登录
+            if not self.context_manager.converged():
+                print("\n[*] Attempting auth bypass...")
+                await self._try_auth_bypass()
+            
             while self._running and iteration < self.max_iterations:
                 if time.time() - start_time > self.max_duration:
                     print("\n[!] Max duration reached")
@@ -362,6 +368,54 @@ class DiscoveryOrchestrator:
                     pass
         
         print(f"    Probed {found_count} endpoints total")
+    
+    async def _try_auth_bypass(self):
+        """尝试认证绕过（弱口令登录）"""
+        if not self._session:
+            import requests
+            self._session = requests.Session()
+            self._session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+        
+        # 创建认证绕过模块
+        auth_bypass = AuthBypass(self.target, self._session)
+        
+        # 从已发现的网络请求中提取信息
+        responses_data = []
+        for req in self.context.network_requests:
+            if req.response_body:
+                try:
+                    import json
+                    data = json.loads(req.response_body)
+                    responses_data.append(data)
+                except:
+                    pass
+        
+        # 提取信息
+        if responses_data:
+            print(f"    [*] Extracting info from {len(responses_data)} responses...")
+            auth_bypass.extract_info_from_responses(responses_data)
+            print(f"    [*] Found: {auth_bypass._summarize_info()}")
+        
+        # 尝试登录
+        login_urls = [
+            self.target + "/prod-api/login",
+            self.target + "/login",
+            self.target + "/api/login",
+        ]
+        
+        for login_url in login_urls:
+            success, token = await auth_bypass.try_login(login_url)
+            if success:
+                self._auth_token = token
+                self.context.auth_info.token = token
+                print(f"\n[!] Auth bypass SUCCESS! Token obtained")
+                # 使用 token 更新 session
+                self._session.headers.update({
+                    'Authorization': 'Bearer ' + token
+                })
+                break
     
     async def _initialize(self):
         """初始化阶段"""
