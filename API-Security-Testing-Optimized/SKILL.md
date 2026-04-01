@@ -225,6 +225,95 @@ def analyze_spa(target_url):
 analyze_spa('http://58.215.18.57:91')
 ```
 
+### 1.2 发现云存储端点? → 触发阶段 5
+
+**触发条件**: 从 JS/响应中发现以下任一模式
+
+| 模式类型 | 检测特征 | 示例 |
+|---------|---------|------|
+| **URL 域名** | 匹配云厂商域名 | `*.oss-aliyuncs.com`, `*.cos.myqcloud.com` |
+| **URL 路径** | 匹配存储路径 | `/minio/`, `/file/`, `/upload/`, `/bucket/` |
+| **响应头** | 包含存储 Header | `X-OSS-*`, `X-Amz-*`, `X-Minio-*` |
+| **响应内容** | XML 格式特征 | `<ListBucketResult>`, `<AccessControlPolicy>` |
+
+**自动检测代码**:
+```python
+# -*- coding: utf-8 -*-
+import sys
+sys.path.insert(0, '/workspace/API-Security-Testing-Optimized')
+
+from core.cloud_storage_tester import CloudStorageTester
+
+def should_trigger_cloud_test(endpoints: List[str], js_content: str = None) -> bool:
+    """判断是否应该触发云存储检测"""
+    
+    # 1. URL 路径模式
+    storage_path_patterns = [
+        '/minio/', '/minio-api/', '/file/', '/files/',
+        '/upload/', '/uploads/', '/storage/', '/bucket/',
+        '/oss/', '/cos/', '/s3/', '/obs/',
+        '/api/file/', '/api/upload/', '/api/storage/'
+    ]
+    
+    for endpoint in endpoints:
+        for pattern in storage_path_patterns:
+            if pattern in endpoint.lower():
+                return True
+    
+    # 2. URL 域名模式
+    domain_patterns = [
+        r'oss-.*\.aliyuncs\.com',
+        r'cos\..*\.myqcloud\.com',
+        r's3\..*\.amazonaws\.com',
+        r'obs\..*\.myhwclouds\.com',
+        r'minio',
+    ]
+    
+    for endpoint in endpoints:
+        for pattern in domain_patterns:
+            if re.search(pattern, endpoint.lower()):
+                return True
+    
+    # 3. JS/响应内容检测
+    if js_content:
+        tester = CloudStorageTester()
+        found = tester.discover_from_text(js_content)
+        if found:
+            return True
+    
+    return False
+
+def trigger_cloud_storage_test(target: str, endpoints: List[str], js_content: str = None):
+    """触发云存储安全检测"""
+    
+    if should_trigger_cloud_test(endpoints, js_content):
+        print("[Decision] 发现云存储特征，触发阶段 5...")
+        
+        # 调用云存储检测
+        from core.cloud_storage_tester import CloudStorageTester
+        tester = CloudStorageTester()
+        
+        # 优先测试 URL 中的存储端点
+        storage_endpoints = []
+        for ep in endpoints:
+            if any(p in ep.lower() for p in ['/minio/', '/file/', '/upload/', '/bucket/', '/oss/', '/cos/']):
+                storage_endpoints.append(ep)
+        
+        if storage_endpoints:
+            for ep in storage_endpoints:
+                print(f"[CloudStorage] 测试: {ep}")
+                results = tester.full_test(ep)
+                # 处理结果...
+        
+        # 也测试当前域名的常见存储路径
+        if 'minio' in str(endpoints).lower():
+            # 使用 test_current_domain_storage
+            from core.cloud_storage_tester import test_current_domain_storage
+            results = test_current_domain_storage(target)
+    
+    return None
+```
+
 ### 1.3 启用 deep_api_tester 发现端点
 
 **强制执行**: 必须调用 deep_api_tester 进行端点发现
@@ -351,10 +440,91 @@ AND 满足以下至少一项 P1:
   □ D4: 暴露内部配置/路径
   □ D5: 可进行未授权操作
 
-辅助条件 P2:
-  □ D6: 业务上下文风险高
-  □ 利用难度低
-  □ 影响范围大
+ 辅助条件 P2:
+   □ D6: 业务上下文风险高
+   □ 利用难度低
+   □ 影响范围大
+ ```
+
+### 2.2 发现云存储特征? → 触发阶段 5
+
+**自动检测决策**: 在阶段 2 分析过程中，发现以下任一情况应立即触发云存储检测
+
+```python
+CLOUD_TRIGGER_PATTERNS = {
+    # 端点路径特征
+    'path': [
+        '/file/', '/files/', '/upload/', '/uploads/',
+        '/storage/', '/bucket/', '/oss/', '/cos/', '/s3/',
+        '/minio/', '/minio-api/', '/api/file/', '/api/upload/'
+    ],
+    # URL 域名特征
+    'domain': [
+        'oss-', 'aliyuncs.com', 'cos.', 'myqcloud.com',
+        'obs.', 'myhwclouds.com', 's3.', 'amazonaws.com',
+        'minio', ':9000', ':9001'
+    ],
+    # 响应 Header 特征
+    'header': [
+        'x-oss-', 'x-amz-', 'x-minio-', 'x-cos-', 'x-obs-'
+    ],
+    # 响应内容特征
+    'content': [
+        '<ListBucket', '<AccessControlPolicy', 'ListBucketResult'
+    ]
+}
+
+def check_and_trigger_cloud_storage(response, endpoint) -> bool:
+    """检查是否应触发云存储检测"""
+    
+    # 1. 检查端点路径
+    for pattern in CLOUD_TRIGGER_PATTERNS['path']:
+        if pattern in endpoint.lower():
+            print(f"[Cloud Trigger] 匹配路径模式: {pattern}")
+            return True
+    
+    # 2. 检查 URL 域名
+    for pattern in CLOUD_TRIGGER_PATTERNS['domain']:
+        if pattern in endpoint.lower():
+            print(f"[Cloud Trigger] 匹配域名模式: {pattern}")
+            return True
+    
+    # 3. 检查响应头
+    if response:
+        headers_text = str(response.headers).lower()
+        for pattern in CLOUD_TRIGGER_PATTERNS['header']:
+            if pattern in headers_text:
+                print(f"[Cloud Trigger] 匹配响应头: {pattern}")
+                return True
+        
+        # 4. 检查响应内容
+        content_text = response.text.lower()
+        for pattern in CLOUD_TRIGGER_PATTERNS['content']:
+            if pattern in content_text:
+                print(f"[Cloud Trigger] 匹配响应内容: {pattern}")
+                return True
+    
+    return False
+```
+
+**决策树**:
+```
+阶段 2 分析响应
+    │
+    ├── 发现 /file/, /upload/, /storage/ 等路径?
+    │       └── → 触发阶段 5
+    │
+    ├── 发现 oss-, cos-, minio 等域名?
+    │       └── → 触发阶段 5
+    │
+    ├── 响应包含 X-OSS-*, X-Amz-* Header?
+    │       └── → 触发阶段 5
+    │
+    ├── 响应内容包含 <ListBucket>?
+    │       └── → 触发阶段 5
+    │
+    └── 其他
+            └── → 继续分析
 ```
 
 ---
@@ -988,7 +1158,45 @@ target = 'http://58.215.18.57:91'
 
 # 使用 deep_api_tester
 api_tester = DeepAPITesterV55(target=target, headless=True)
-api_tester.run_test()
+endpoints = api_tester.run_test()
+
+print("\n" + "="*60)
+print("阶段 1.2: 检查云存储触发条件")
+print("="*60)
+
+# 云存储触发检测
+from core.cloud_storage_tester import CloudStorageTester
+cloud_tester = CloudStorageTester(session=session)
+
+# 检测模式
+CLOUD_PATH_PATTERNS = ['/minio/', '/file/', '/upload/', '/storage/', '/bucket/', '/oss/', '/cos/', '/s3/']
+trigger_cloud = False
+
+for ep in (endpoints or []):
+    for pattern in CLOUD_PATH_PATTERNS:
+        if pattern in str(ep).lower():
+            print(f"[Cloud Trigger] 发现云存储端点: {ep}")
+            trigger_cloud = True
+            break
+    if trigger_cloud:
+        break
+
+if trigger_cloud:
+    print("[Cloud Trigger] 触发云存储安全检测...")
+    print("\n" + "="*60)
+    print("阶段 5: 云存储安全检测")
+    print("="*60)
+    
+    # 测试当前域名的存储路径
+    for pattern in CLOUD_PATH_PATTERNS:
+        storage_url = target.rstrip('/') + pattern
+        print(f"[CloudStorage] 测试: {storage_url}")
+        try:
+            results = cloud_tester.full_test(storage_url)
+            if results:
+                print(f"[CloudStorage] 发现 {len(results)} 个问题")
+        except Exception as e:
+            print(f"[CloudStorage] 测试失败: {e}")
 
 print("\n" + "="*60)
 print("阶段 2-3: 漏洞测试与验证")
@@ -1000,18 +1208,22 @@ session = requests.Session()
 fuzzer = APIfuzzer(session=session)
 fuzzer.set_target(target + '/icp-api')
 
-print("\n" + "="*60)
-print("阶段 5: 云存储安全检测")
-print("="*60)
-
-# 云存储检测
-from core.cloud_storage_tester import CloudStorageTester
-cloud_tester = CloudStorageTester(session=session)
-
-# 发现存储桶 URL 并测试
-# cloud_urls = [...]  # 从 API 发现中收集
-# for url in cloud_urls:
-#     results = cloud_tester.full_test(url)
+# 云存储检测（如果阶段 1 未触发）
+if not trigger_cloud:
+    print("\n" + "="*60)
+    print("阶段 5: 云存储安全检测")
+    print("="*60)
+    print("[CloudStorage] 尝试发现云存储...")
+    # 从 JS 响应中发现存储 URL
+    try:
+        resp = session.get(target, timeout=10)
+        found = cloud_tester.discover_from_text(resp.text)
+        if found:
+            for f in found[:5]:
+                print(f"[CloudStorage] 发现: {f.get('url')}")
+                results = cloud_tester.full_test(f.get('url'))
+    except:
+        pass
 
 print("\n" + "="*60)
 print("完成")
