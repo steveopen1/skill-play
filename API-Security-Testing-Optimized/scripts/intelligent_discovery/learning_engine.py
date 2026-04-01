@@ -257,7 +257,7 @@ class LearningEngine:
         strategies = []
         
         high_performers = [
-            (at.value, rate) 
+            (at, rate) 
             for at, rate in self._action_success_rates.items()
             if rate > 0.7
         ]
@@ -266,7 +266,7 @@ class LearningEngine:
             strategies.append(f"Use {action_type} (confidence: {rate:.2f})")
         
         low_performers = [
-            (at.value, rate)
+            (at, rate)
             for at, rate in self._action_success_rates.items()
             if rate < 0.3
         ]

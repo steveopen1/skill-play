@@ -15,7 +15,7 @@ from typing import List, Dict, Optional, Any, Set
 from urllib.parse import urlparse, parse_qs
 
 from ..models import (
-    Endpoint, Pattern, Insight, AnalysisResult, NetworkRequest,
+    Endpoint, Pattern, Insight, InsightType, AnalysisResult, NetworkRequest,
     Observation, ObservationType, TechStack, TechStackType, Finding
 )
 
@@ -101,6 +101,7 @@ class ResponseAnalyzer:
         try:
             data = json.loads(content)
             
+            endpoints = []
             endpoints.extend(self._infer_pagination_endpoints(response))
             endpoints.extend(self._infer_crud_endpoints(response))
             endpoints.extend(self._infer_hateoas_endpoints(response))

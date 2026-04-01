@@ -228,7 +228,7 @@ class SourceAnalyzer:
                 if not getattr(self, '_api_base', None):
                     self._api_base = api_base
             
-            result.tech_hints.extend(data.get("tech_hints", []))
+            result.tech_stack_hints.extend(data.get("tech_hints", []))
             
         except (json.JSONDecodeError, Exception) as e:
             result.errors.append(f"LLM analysis failed: {str(e)}")
@@ -306,7 +306,7 @@ class SourceAnalyzer:
         if 'jquery' in content.lower():
             tech_hints.append("jQuery")
         
-        result.tech_hints.extend(tech_hints)
+        result.tech_stack_hints.extend(tech_hints)
         
         return result
     
@@ -353,7 +353,7 @@ class SourceAnalyzer:
                     confidence=0.6
                 ))
         
-        result.tech_hints.extend(self._detect_frontend_framework(content))
+        result.tech_stack_hints.extend(self._detect_frontend_framework(content))
         
         return result
     
