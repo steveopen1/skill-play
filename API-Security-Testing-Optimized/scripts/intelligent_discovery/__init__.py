@@ -14,6 +14,9 @@ Intelligent API Discovery Package
 - StrategyGenerator: 策略生成器
 - DiscoveryOrchestrator: 协调器
 - EnvironmentChecker: 环境检查器
+
+注意：本模块是 Skill 的工具集，供 Agent 根据 SKILL.md 的指导框架自主决策使用。
+认证绕过等高级功能由 Agent 根据 Phase 6 指导框架自主实现。
 """
 
 from .agent_brain import AgentBrain, create_agent_brain
@@ -23,7 +26,6 @@ from .learning_engine import LearningEngine, create_learning_engine
 from .insight_generator import InsightGenerator, create_insight_generator
 from .strategy_generator import StrategyGenerator, create_strategy_generator
 from .environment import EnvironmentChecker
-from .auth_bypass import AuthBypass, create_auth_bypass
 from .models import (
     DiscoveryContext, Endpoint, Observation, Insight, Strategy, Action,
     NetworkRequest, Pattern, PageStructure, TechStack, AuthInfo,
@@ -52,8 +54,6 @@ __all__ = [
     
     # Environment
     'EnvironmentChecker',
-    'AuthBypass',
-    'create_auth_bypass',
     
     # Models
     'DiscoveryContext',
