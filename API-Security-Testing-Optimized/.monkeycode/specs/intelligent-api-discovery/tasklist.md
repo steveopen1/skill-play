@@ -25,7 +25,7 @@
 
 - [x] 4.1 实现 `DiscoveryOrchestrator` - 协调各组件
 - [x] 4.2 更新 SKILL.md - 作为参考框架
-- [ ] 4.3 编写单元测试
+- [x] 4.3 编写单元测试
 
 ### Phase 5: 完善与测试 (Polish & Testing)
 
