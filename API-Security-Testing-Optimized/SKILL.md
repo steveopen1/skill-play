@@ -2,7 +2,6 @@
 name: api-security-testing
 description: 针对授权目标进行结构化的 REST/GraphQL API 安全评估。当用户提到安全测试、漏洞检测、渗透测试或需要生成安全报告时自动触发。
 trigger:
-  # 触发短语
   phrases:
     - "安全测试"
     - "安全审计"
@@ -11,343 +10,377 @@ trigger:
     - "安全评估"
     - "api 安全"
     - "接口安全"
-    - "rest api 安全"
-    - "graphql 安全"
-    - "swagger 安全"
-    - "openapi 安全"
     - "帮我检测漏洞"
     - "检查安全问题"
-    - "api 漏洞"
     - "安全报告"
-    - "安全发现"
     - "全流程测试"
-    - "完整测试"
-  # 触发模式（正则）
   patterns:
-    - "(?:帮我)?(?:进行?|做)(?:api|接口|rest|graphql|安全|渗透)?(?:测试|审计|检测|扫描|评估)"
-    - "(?:帮我)?(?:检查?|发现?|识别?)(?:api|接口|rest|graphql|安全)?(?:漏洞|风险|问题)"
-    - "(?:生成|输出)(?:api|安全)?报告"
-    - "(?:rest|graphql|api)(?:端点|接口)(?:测试|安全)"
-    - "(?:openapi|swagger)(?:规范|文件)(?:分析|审计|检测)"
-  # 自动触发
+    - "(?:帮我)?(?:进行?|做)(?:api|接口|安全)?(?:测试|检测|扫描)"
+    - "(?:帮我)?(?:检查?|发现?)(?:api|安全)?(?:漏洞|问题)"
+    - "(?:生成|输出)(?:安全)?报告"
   auto_trigger: true
 ---
 
-# API 安全测试
+# API 安全测试 Skill
 
 针对授权目标进行结构化的 REST/GraphQL API 安全评估。
 
-## 核心能力架构
+---
 
-```
-SKILL.md (指导框架)
-    ↓ 调用
-core/ (执行能力)
-    ├── orchestrator.py      # 智能编排器 - 协调所有测试
-    ├── advanced_recon.py     # 高级侦察 - 资产发现
-    ├── browser_tester.py     # 浏览器测试 - SPA/JS分析
-    ├── deep_api_tester.py    # API 深度测试
-    ├── api_fuzzer.py         # 模糊测试
-    ├── reasoning_engine.py   # 推理引擎 - 洞察生成
-    └── strategy_pool.py      # 策略池 - 测试策略
-```
+## 核心理念
 
-## 执行模式
+| 理念 | 说明 |
+|------|------|
+| **框架指导** | SKILL.md 是决策框架，不是执行脚本 |
+| **能力池** | core/ 是能力池，Agent 按需调用 |
+| **动态组合** | 根据目标特征动态选择工具组合 |
+| **实时定制** | 每一步都根据上一步结果调整策略 |
 
-### 模式 A: 快速测试 (默认)
+---
+
+## 能力池 (core/)
+
+Agent 根据情况从能力池中选择合适的模块：
+
+| 模块 | 能力 | 何时使用 |
+|------|------|---------|
+| `advanced_recon.py` | 端口扫描、指纹识别、路径发现 | 初始探测阶段 |
+| `browser_tester.py` | SPA 动态分析、JS 提取、DOM XSS | 发现 Vue/React 等 SPA |
+| `deep_api_tester.py` | 认证测试、IDOR、业务逻辑 | 发现 API 端点后 |
+| `api_fuzzer.py` | SQL注入、XSS、命令注入 | 漏洞验证阶段 |
+| `reasoning_engine.py` | 洞察生成、模式识别 | 需要理解发现时 |
+| `context_manager.py` | 上下文跟踪、状态管理 | 复杂测试场景 |
+
+---
+
+## 决策流程
+
+### 阶段 0: 初始化 → 能力选择
+
+**问题**: 目标是什么类型？
+
+**探测动作**:
 ```bash
-cd /workspace/API-Security-Testing-Optimized
-python -m core.orchestrator --target http://target.com --mode quick
+# 1. 检查目标响应特征
+curl -s -I http://target/
+
+# 2. 分析响应判断类型
+# - HTML + Vue/React → SPA 类型
+# - JSON 直接返回 → API 类型  
+# - HTML 静态页面 → Web 类型
+# - GraphQL 特征 → GraphQL 类型
 ```
 
-### 模式 B: 完整测试
-```bash
-python -m core.orchestrator --target http://target.com --mode full
-```
+**能力选择决策**:
 
-### 模式 C: 深度测试
-```bash
-python -m core.orchestrator --target http://target.com --mode deep
+```
+发现响应类型?
+    │
+    ├── HTML + (Vue|React|Angular) 特征
+    │       └── → browser_tester.py (分析 SPA + JS)
+    │              → advanced_recon.py (补充侦察)
+    │
+    ├── JSON 直接响应
+    │       └── → deep_api_tester.py (API 测试)
+    │              → api_fuzzer.py (漏洞测试)
+    │
+    ├── GraphQL 特征
+    │       └── → graphql-guidance (专用探测)
+    │              → api_fuzzer.py (GraphQL 注入)
+    │
+    └── 未知/混合
+            └── → 组合使用多个模块
 ```
 
 ---
 
-## 阶段执行流程
+### 阶段 1: 侦察 → 资产发现
 
-### 阶段 0: 初始化 (自动执行)
+**问题**: 发现了什么资产？有哪些攻击面？
 
-**触发**: Skill 激活后立即执行
+**侦察策略** (根据阶段0选择的能力组合):
 
-**执行**:
+#### 策略 A: SPA 类型
 ```bash
-# 使用高级侦察模块初始化
+# 组合: browser_tester + advanced_recon
 python -c "
+from core.browser_tester import BrowserAutomationTester
 from core.advanced_recon import AdvancedRecon
+
+# 1. 浏览器分析 SPA
+browser = BrowserAutomationTester(target_url='http://target.com')
+spa_result = browser.analyze_spa()
+
+# 2. 从 JS 提取 API 路径
+api_paths = spa_result.extract_api_paths()
+
+# 3. 补充侦察
 recon = AdvancedRecon()
-result = recon.init_target('http://target.com')
-print(result)
+recon_result = recon.scan(target='http://target.com', paths=api_paths)
+
+print('Endpoints:', recon_result.endpoints)
+print('Tech Stack:', recon_result.tech_stack)
 "
 ```
 
-**决策点**:
-| 发现特征 | 选择策略 |
-|---------|---------|
-| Vue/React/Angular SPA | → 启用 browser_tester.py |
-| 静态 HTML | → 目录扫描 + 指纹识别 |
-| 直接返回 JSON | → deep_api_tester.py |
-| GraphQL | → GraphQL 专用探测 |
-
----
-
-### 阶段 1: 资产发现
-
-**触发**: 阶段 0 完成后自动触发
-
-**执行**:
+#### 策略 B: API 类型
 ```bash
-# 使用编排器执行侦察
+# 组合: deep_api_tester + api_fuzzer
 python -c "
-from core.orchestrator import AgenticOrchestrator
+from core.deep_api_tester import DeepAPITester
+from core.api_fuzzer import APIFuzzer
 
-orch = AgenticOrchestrator()
-orch.setup_target('http://target.com')
+# 1. API 指纹识别
+tester = DeepAPITester(base_url='http://target.com/api')
+api_result = tester.fingerprint()
 
-# 执行侦察阶段
-result = orch.run_phase('recon')
-print(result.endpoints)  # 发现的端点
-print(result.tech_stack)  # 技术栈
-print(result.api_base)  # API Base URL
+# 2. 端点发现
+endpoints = tester.discover_endpoints()
+
+# 3. 漏洞探测
+fuzzer = APIFuzzer(base_url='http://target.com/api')
+vulns = fuzzer.scan(endpoints=endpoints)
 "
 ```
-
-**能力调用**:
-- `core/advanced_recon.py` - 端口扫描、指纹识别、路径发现
-- `core/browser_tester.py` - SPA JS 分析、API 路径提取
-- `core/deep_api_tester.py` - OpenAPI/Swagger 解析
 
 **迭代触发**:
-- 发现 `/prod-api` baseURL → 深入端点枚举
-- 发现 Swagger 文档 → 完整 API 解析
-- 发现 SPA → 启用无头浏览器分析 JS
+- 发现新端点 → 返回继续侦察
+- 发现新技术栈 → 调整测试策略
+- 发现认证机制 → 进入阶段 2
 
 ---
 
-### 阶段 2: 认证与授权测试
+### 阶段 2: 认证分析 → 风险识别
 
-**触发**: 发现 API 端点后自动触发
+**问题**: 认证机制是否安全？有哪些绕过风险？
 
-**执行**:
+**分析策略** (根据发现的资产类型组合能力):
+
 ```bash
+# 动态组合分析
 python -c "
-from core.orchestrator import AgenticOrchestrator
+from core.deep_api_tester import DeepAPITester
+from core.reasoning_engine import Reasoner
 
-orch = AgenticOrchestrator()
-orch.setup_target('http://target.com')
-orch.run_phase('recon')
+tester = DeepAPITester(base_url='http://target.com/api')
+reasoner = Reasoner()
 
-# 执行认证测试
-result = orch.run_phase('auth')
+# 1. 测试认证端点
+auth_result = tester.test_auth_endpoints()
 
-# 检查发现的漏洞
-for vuln in result.vulnerabilities:
-    print(f'{vuln.severity}: {vuln.name}')
-    print(f'  Evidence: {vuln.evidence}')
+# 2. 分析认证模式
+auth_analysis = reasoner.analyze_auth_pattern(auth_result)
+
+# 3. 识别风险
+for risk in auth_analysis.risks:
+    print(f'Risk: {risk.type}')
+    print(f'  Evidence: {risk.evidence}')
+    print(f'  Severity: {risk.severity}')
 "
 ```
 
-**能力调用**:
-- `core/deep_api_tester.py` - 登录接口测试
-- `core/api_fuzzer.py` - 暴力破解检测
-- 内置 CORS 检测
+**关键检测项**:
 
-**决策点**:
-| 发现 | 风险 | 行动 |
-|------|------|------|
-| CORS: Origin=* + Credentials | Critical | 立即记录 |
-| 登录无验证码 | High | 暴力破解测试 |
-| 敏感端点公开 | High | 记录配置问题 |
+| 检测项 | 风险等级 | 调用模块 |
+|--------|---------|---------|
+| CORS 配置错误 | Critical | reasoning_engine |
+| 暴力攻击无防护 | High | api_fuzzer |
+| 敏感端点公开 | High | deep_api_tester |
+| Token 弱加密 | Medium | reasoning_engine |
+| 会话管理缺陷 | Medium | deep_api_tester |
 
 ---
 
-### 阶段 3: 漏洞验证
+### 阶段 3: 漏洞验证 → 利用测试
 
-**触发**: 阶段 2 完成或发现新资产
+**问题**: 发现的风险是否可利用？严重性如何？
 
-**执行**:
+**验证策略** (根据风险类型动态选择):
+
 ```bash
+# 按风险类型选择验证方式
 python -c "
-from core.orchestrator import AgenticOrchestrator
+from core.api_fuzzer import APIFuzzer
+from core.browser_tester import BrowserAutomationTester
 
-orch = AgenticOrchestrator()
-orch.setup_target('http://target.com')
-orch.run_phase('recon')
-orch.run_phase('auth')
+fuzzer = APIFuzzer(base_url='http://target.com/api')
+browser = BrowserAutomationTester(target_url='http://target.com')
 
-# 执行漏洞测试
-result = orch.run_phase('vulns')
-
-print('Findings:')
-for finding in result.findings:
-    print(f'  [{finding.severity}] {finding.title}')
-    print(f'    Confidence: {finding.confidence}')
-    print(f'    Remediation: {finding.remediation}')
+# 根据发现的风险选择验证模块
+if risk.type == 'SQL_INJECTION':
+    result = fuzzer.test_sqli(endpoint=risk.endpoint, param=risk.param)
+elif risk.type == 'XSS':
+    result = browser.test_dom_xss(endpoint=risk.endpoint)
+elif risk.type == 'IDOR':
+    result = tester.test_idor(endpoint=risk.endpoint)
+elif risk.type == 'CORS':
+    result = tester.test_cors_exploit(risk.configuration)
 "
 ```
 
-**能力调用**:
-- `core/api_fuzzer.py` - SQL注入、XSS、命令注入
-- `core/deep_api_tester.py` - IDOR、越权测试
-- `core/browser_tester.py` - DOM XSS、CSRF
+**迭代触发**:
+- 验证成功 → 提升严重性，生成 PoC
+- 验证失败 → 降级或标记为 Hypothesis
+- 发现新漏洞 → 添加到发现列表，返回阶段 1
 
 ---
 
-### 阶段 4: 深度测试
+### 阶段 4: 洞察生成 → 模式识别
 
-**触发**: 基础测试完成，时间允许则继续
+**问题**: 这些发现意味着什么？有什么深层模式？
 
-**执行**:
+```bash
+# 使用推理引擎分析模式
+python -c "
+from core.reasoning_engine import Reasoner
+
+reasoner = Reasoner()
+
+# 1. 聚合所有发现
+all_findings = [...端点, ...漏洞, ...配置问题]
+
+# 2. 生成洞察
+insights = reasoner.generate_insights(all_findings)
+
+# 3. 识别攻击路径
+attack_paths = reasoner.identify_attack_paths(insights)
+
+# 4. 生成建议
+recommendations = reasoner.prioritize_remediation(attack_paths)
+"
+```
+
+---
+
+### 阶段 5: 报告生成 → 结构化输出
+
+**根据用户要求生成报告**:
+
 ```bash
 python -c "
-from core.orchestrator import AgenticOrchestrator
+from core.context_manager import ContextManager
 
-orch = AgenticOrchestrator()
-orch.setup_target('http://target.com')
-orch.run_phase('full')  # 执行所有阶段
+ctx = ContextManager()
+ctx.load_findings([...])
+ctx.load_asset_summary({...})
 
-# 生成报告
-report = orch.generate_report(format='markdown')
+# 生成符合模板的报告
+report = ctx.generate_report(
+    format='markdown',
+    template='references/report-template.md',
+    severity_calibration='references/severity-model.md'
+)
 print(report)
 "
 ```
 
 ---
 
-### 阶段 5: 报告生成
+## 动态决策树
 
-**触发**: 测试完成或用户确认结束
-
-**执行**:
-```bash
-python -c "
-from core.orchestrator import AgenticOrchestrator
-
-orch = AgenticOrchestrator()
-orch.setup_target('http://target.com')
-orch.run_phase('full')
-
-# 生成结构化报告
-print(orch.report)
-" > security-report.md
+```
+开始测试
+    │
+    ▼
+[阶段0: 初始化]
+    │  curl -I http://target/
+    ▼
+发现目标类型?
+    │
+    ├── SPA (Vue/React) ─────────────────────────┐
+    │       │                                    │
+    │       ▼                                    │
+    │   browser_tester.py                        │
+    │       │                                    │
+    │       ├── 发现 API baseURL? ──→ 记录       │
+    │       │                                    │
+    │       └── JS 分析 ──→ 更多端点? ──→ 阶段1  │
+    │                                                │
+    ├── 直接 JSON API ──────────────────────────────┤
+    │       │                                        │
+    │       ▼                                        │
+    │   deep_api_tester.py                           │
+    │       │                                        │
+    │       ├── 端点枚举 ──→ 阶段2                  │
+    │       └── 指纹识别 ──→ 阶段3                  │
+    │                                                │
+    └── 混合/未知 ──────────────────────────────────┤
+            │                                        │
+            ▼                                        │
+        组合多个模块                                  │
+            │                                        │
+            ▼                                        │
+    [阶段1: 侦察] ◄─────────────────────────────────┘
+        │
+        ├── 发现新端点? ──→ 继续侦察
+        ├── 发现认证机制? ──→ 阶段2
+        └── 端点穷尽? ──→ 阶段3
+            │
+            ▼
+    [阶段2: 认证分析]
+        │
+        ├── 发现高风险? ──→ 立即记录
+        ├── 需要验证? ──→ 阶段3
+        └── 完成? ──→ 阶段4
+            │
+            ▼
+    [阶段3: 漏洞验证]
+        │
+        ├── 验证成功? ──→ 提升严重性
+        ├── 发现新风险? ──→ 添加到列表 ──→ 阶段1
+        └── 完成? ──→ 阶段4
+            │
+            ▼
+    [阶段4: 洞察生成]
+        │
+        ├── 识别攻击路径
+        └── 优先级排序
+            │
+            ▼
+    [阶段5: 报告]
 ```
 
 ---
 
-## 核心模块详解
+## 能力调用示例
 
-### core/orchestrator.py - 智能编排器
+### 示例 1: Vue SPA 目标
 
-```python
-from core.orchestrator import AgenticOrchestrator
+```
+目标: http://target.com (Vue.js SPA)
+发现的特征: HTML 返回 Vue 特征, JS 中有 baseURL: '/api'
 
-# 初始化
-orch = AgenticOrchestrator()
-
-# 配置
-orch.setup_target(
-    url='http://target.com',
-    auth_token='Bearer xxx',  # 可选
-    headers={},  # 自定义头
-    cookies={}  # 自定义 cookie
-)
-
-# 执行测试
-orch.run_phase('recon')      # 侦察阶段
-orch.run_phase('auth')      # 认证测试
-orch.run_phase('vulns')     # 漏洞验证
-orch.run_phase('full')      # 完整测试
-
-# 获取结果
-print(orch.report)          # 完整报告
-print(orch.findings)        # 发现列表
-print(orch.endpoints)        # 端点列表
+动态组合:
+1. browser_tester.py → 分析 SPA, 提取 /api 路径
+2. advanced_recon.py → 补充侦察 /api 端点
+3. deep_api_tester.py → 测试认证接口
+4. api_fuzzer.py → 验证发现的端点
+5. reasoning_engine.py → 生成洞察
 ```
 
-### core/browser_tester.py - 浏览器测试
+### 示例 2: 纯 API 目标
 
-```python
-from core.browser_tester import BrowserAutomationTester, BrowserEngine
+```
+目标: http://api.target.com (直接返回 JSON)
+发现的特征: 直接 JSON 响应, 无前端
 
-# 初始化 (自动选择可用引擎)
-tester = BrowserAutomationTester(
-    target_url='http://target.com',
-    engine=BrowserEngine.AUTO,  # 自动选择 Playwright/Puppeteer/Selenium
-    headless=True
-)
-
-# 执行测试
-result = tester.test_spa_api_discovery()
-
-# 测试 XSS
-xss_results = tester.test_dom_xss()
-
-# 测试表单
-form_results = tester.test_form_submission()
+动态组合:
+1. deep_api_tester.py → 指纹识别 + 端点发现
+2. api_fuzzer.py → 漏洞扫描
+3. reasoning_engine.py → 模式分析
 ```
 
-### core/deep_api_tester.py - API 深度测试
+### 示例 3: GraphQL 目标
 
-```python
-from core.deep_api_tester import DeepAPITester
-
-tester = DeepAPITester(
-    base_url='http://target.com/prod-api',
-    auth=None
-)
-
-# 测试认证绕过
-auth_results = tester.test_auth_bypass()
-
-# 测试 IDOR
-idor_results = tester.test_idor()
-
-# 测试业务逻辑
-biz_results = tester.test_business_logic()
 ```
+目标: http://target.com/graphql
+发现的特征: GraphQL 特征
 
-### core/api_fuzzer.py - 模糊测试
-
-```python
-from core.api_fuzzer import APIFuzzer
-
-fuzzer = APIFuzzer(
-    base_url='http://target.com/api',
-    fuzz_params=True
-)
-
-# SQL注入模糊测试
-sqli_results = fuzzer.fuzz_sqli()
-
-# XSS 模糊测试
-xss_results = fuzzer.fuzz_xss()
-
-# 命令注入测试
-cmd_results = fuzzer.fuzz_cmd_injection()
+动态组合:
+1. graphql-guidance → GraphQL 专用探测
+2. api_fuzzer.py → GraphQL 注入测试
+3. reasoning_engine.py → 嵌套遍历分析
 ```
-
----
-
-## 工具选择决策表
-
-| 场景 | 首选工具 | 备选工具 |
-|------|---------|---------|
-| SPA + JS 分析 | browser_tester.py | 手动 curl + JS 下载 |
-| OpenAPI/Swagger | deep_api_tester.py | swagger-parser |
-| 认证测试 | deep_api_tester.py | curl 手动测试 |
-| SQL注入 | api_fuzzer.py | sqlmap |
-| XSS | api_fuzzer.py + browser_tester.py | burp |
-| CORS | 内置检测 | curl |
-| 暴力破解 | api_fuzzer.py | hydra |
-| 端点发现 | advanced_recon.py | ffuf/dirb |
 
 ---
 
@@ -355,106 +388,66 @@ cmd_results = fuzzer.fuzz_cmd_injection()
 
 ### 严重性级别
 
-| 级别 | 触发条件 | 示例 |
-|------|----------|------|
-| Critical | 直接导致未授权访问或账户劫持 | CORS + credentials、SQL注入 |
-| High | 可导致权限提升或用户数据访问 | IDOR、垂直越权、敏感端点泄露 |
-| Medium | 可导致有限影响或信息泄露 | 信息枚举、暴力防护缺失 |
-| Low | 影响有限的信息披露 | 调试头暴露、版本信息泄露 |
-| Informational | 非安全问题 | 最佳实践建议 |
+| 级别 | 触发条件 |
+|------|----------|
+| Critical | 直接导致未授权访问或账户劫持 |
+| High | 可导致权限提升或数据泄露 |
+| Medium | 可导致有限影响或信息泄露 |
+| Low | 影响有限的信息披露 |
+| Informational | 非安全问题 |
 
 ### 置信度级别
 
-| 级别 | 标准 | 要求证据 |
-|------|------|----------|
-| Confirmed | 完全验证，有 PoC | 完整请求/响应 |
-| High | 强指标 | 请求+响应+影响分析 |
-| Medium | 中等指标 | 观察到的行为 |
-| Low | 弱指标 | 单一响应 |
-| Hypothesis | 理论推断 | 需要进一步调查 |
+| 级别 | 标准 |
+|------|------|
+| Confirmed | 完全验证，有完整 PoC |
+| High | 强指标，可合理推断 |
+| Medium | 中等指标 |
+| Low | 弱指标，可能是误报 |
+| Hypothesis | 理论推断，需进一步调查 |
 
 ---
 
-## 输出格式
+## 报告结构
 
-### 必须包含的章节
-
-```markdown
+```
 ## Scope
-- Target: [目标 URL]
-- Assessment Mode: [文档驱动/被动/主动]
-- Authorization: [授权范围]
-- Tech Stack: [识别的技术栈]
+- Target:
+- Assessment Mode:
+- Authorization:
 
 ## Asset Summary
-- Base URLs: [发现的所有 base URL]
-- API Type: [REST/GraphQL/SPA+API]
-- Auth Schemes: [认证方式]
-- Discovered Endpoints: [端点列表]
-- Sensitive Objects: [敏感对象]
+- Base URLs:
+- API Type:
+- Tech Stack:
+- Discovered Endpoints:
 
 ## Test Matrix
 | Category | Test Item | Priority | Status | Finding |
-|----------|----------|----------|--------|---------|
 
 ## Findings
-### Finding N: [标题]
-**Severity**: [Critical/High/Medium/Low/Informational]
-**Confidence**: [Confirmed/High/Medium/Low/Hypothesis]
-**Affected Asset**: [endpoint]
-**Description**: [问题描述]
-**Evidence**: [请求/响应样本]
-**Reproduction**: [复现步骤]
-**Impact**: [影响评估]
-**Remediation**: [修复建议]
+[按严重性排序]
 
 ## Coverage Gaps
-| Gap | Impact | Recommendation |
-|-----|--------|-----------------|
 
 ## Overall Risk Summary
-| Risk Level | Count | Findings |
-|------------|-------|----------|
-| Critical | N | [列表] |
-| High | N | [列表] |
 ```
 
 ---
 
-## 快速开始
+## 快速参考
 
-### 方式 1: 命令行 (推荐)
 ```bash
-cd /workspace/API-Security-Testing-Optimized
-python -m core.orchestrator --target http://58.216.179.90:8031/ --mode full
+# 查看可用能力
+ls core/*.py
+
+# 查看模块文档
+python -c "from core.module_name import *; help(module_name)"
+
+# 动态导入使用
+python -c "
+import importlib
+module = importlib.import_module('core.browser_tester')
+tester = module.BrowserAutomationTester(...)
+"
 ```
-
-### 方式 2: Python 脚本
-```python
-from core.orchestrator import AgenticOrchestrator
-
-orch = AgenticOrchestrator()
-orch.setup_target('http://target.com')
-orch.run_phase('full')
-print(orch.report)
-```
-
-### 方式 3: Jupyter Notebook
-```python
-%run core/orchestrator.py
-orch = AgenticOrchestrator()
-orch.setup_target('http://target.com')
-orch.run_phase('full')
-```
-
----
-
-## 参考文档
-
-| 模块 | 参考文档 |
-|------|---------|
-| orchestrator | `core/orchestrator.py` (内嵌文档) |
-| browser_tester | `core/browser_tester.py` (内嵌文档) |
-| deep_api_tester | `core/deep_api_tester.py` (内嵌文档) |
-| api_fuzzer | `core/api_fuzzer.py` (内嵌文档) |
-| advanced_recon | `core/advanced_recon.py` (内嵌文档) |
