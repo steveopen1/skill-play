@@ -268,12 +268,17 @@ class DiscoveryOrchestrator:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             })
         
-        # 常见的后台管理 API 端点
+        found_count = 0
+        
+        # Phase 1: 探测基础端点
         common_endpoints = [
-            # RuoYi-Vue 常见端点
             "/prod-api/common/permission/getMenu",
+            "/prod-api/common/permission/getInfo",
+            "/prod-api/common/permission/getRouters",
             "/prod-api/system/user/profile",
+            "/prod-api/system/user/getInfo",
             "/prod-api/system/menu/list",
+            "/prod-api/system/menu/getRouters",
             "/prod-api/system/role/list",
             "/prod-api/system/dept/list",
             "/prod-api/system/user/list",
@@ -282,57 +287,81 @@ class DiscoveryOrchestrator:
             "/prod-api/system/post/list",
             "/prod-api/system/notice/list",
             "/prod-api/system/login/logout",
+            "/prod-api/system/operlog/list",
+            "/prod-api/system/logininfor/list",
+            "/prod-api/system/dict/data/type",
+            "/prod-api/monitor/online/list",
+            "/prod-api/monitor/server/list",
+            "/prod-api/monitor/cache/list",
             "/prod-api/getSiteList",
             "/prod-api/ws/info",
             "/prod-api/license/valid",
             "/prod-api/captchaImage",
-            "/prod-api/login",
-            # 其他常见端点
-            "/api/system/user/list",
-            "/api/system/menu/list",
-            "/api/system/role/list",
-            "/api/common/permission/getMenu",
+            "/prod-api/logout",
         ]
         
-        found_count = 0
         for path in common_endpoints:
             url = self.target.rstrip('/') + path
-            try:
-                # Try GET
-                resp = self._session.get(url, timeout=3)
-                if resp.status_code == 200:
-                    try:
-                        data = resp.json()
-                        if data.get('code') == 200 or 'data' in data:
-                            endpoint = Endpoint(
-                                path=path,
-                                method="GET",
-                                source="common_probe",
-                                confidence=0.7
-                            )
-                            if self.context_manager.add_endpoint(endpoint):
-                                found_count += 1
-                                print(f"    [GET] {path}")
-                    except:
-                        pass
-                
-                # Try POST
-                resp = self._session.post(url, json={}, timeout=3)
-                if resp.status_code == 200:
-                    endpoint = Endpoint(
-                        path=path,
-                        method="POST",
-                        source="common_probe",
-                        confidence=0.7
-                    )
-                    if self.context_manager.add_endpoint(endpoint):
-                        found_count += 1
-                        print(f"    [POST] {path}")
-                        
-            except:
-                pass
+            for method in ['GET', 'POST']:
+                try:
+                    if method == 'GET':
+                        resp = self._session.get(url, timeout=3)
+                    else:
+                        resp = self._session.post(url, json={}, timeout=3)
+                    
+                    if resp.status_code == 200:
+                        try:
+                            data = resp.json()
+                            if data.get('code') == 200:
+                                endpoint = Endpoint(
+                                    path=path,
+                                    method=method,
+                                    source="common_probe",
+                                    confidence=0.7
+                                )
+                                if self.context_manager.add_endpoint(endpoint):
+                                    found_count += 1
+                                    print(f"    [{method}] {path}")
+                        except:
+                            pass
+                except:
+                    pass
         
-        print(f"    Probed {found_count} new endpoints")
+        # Phase 2: 变体探测 - 资源 + 操作
+        print("    [*] Probing resource variations...")
+        
+        resources = [
+            'user', 'role', 'menu', 'dept', 'post', 'dict', 'dictData', 'dictType',
+            'config', 'notice', 'log', 'operlog', 'logininfor', 'job', 'task',
+            'online', 'server', 'cache', 'monitor'
+        ]
+        actions = ['list', 'get', 'add', 'create', 'update', 'edit', 'delete', 'remove', 'export', 'import']
+        
+        for resource in resources:
+            for action in actions:
+                path = f"/prod-api/system/{resource}/{action}"
+                url = self.target.rstrip('/') + path
+                try:
+                    resp = self._session.post(url, json={}, timeout=2)
+                    if resp.status_code == 200:
+                        try:
+                            data = resp.json()
+                            if data.get('code') == 200:
+                                endpoint = Endpoint(
+                                    path=path,
+                                    method="POST",
+                                    source="variation_probe",
+                                    confidence=0.6
+                                )
+                                if self.context_manager.add_endpoint(endpoint):
+                                    found_count += 1
+                                    print(f"    [Variation] POST {path}")
+                        except:
+                            pass
+                except:
+                    pass
+        
+        print(f"    Probed {found_count} endpoints total")
     
     async def _initialize(self):
         """初始化阶段"""
