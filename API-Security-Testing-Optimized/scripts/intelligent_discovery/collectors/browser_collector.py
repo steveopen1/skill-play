@@ -55,7 +55,7 @@ class BrowserCollector:
     def __init__(
         self,
         headless: bool = True,
-        timeout: int = 30000,
+        timeout: int = 60000,
         user_agent: Optional[str] = None
     ):
         """
@@ -63,7 +63,7 @@ class BrowserCollector:
         
         Args:
             headless: 是否使用无头模式
-            timeout: 超时时间（毫秒）
+            timeout: 超时时间（毫秒），默认60秒，适用于SPA应用
             user_agent: 自定义 User-Agent
         """
         self.headless = headless
@@ -144,7 +144,9 @@ class BrowserCollector:
         response = await self._page.goto(url, timeout=self.timeout)
         self._current_url = url
         
-        await self._page.wait_for_load_state("networkidle", timeout=5000)
+        await self._page.wait_for_load_state("networkidle", timeout=30000)
+        
+        await asyncio.sleep(2)
         
         return await self.get_page_structure()
     
@@ -397,7 +399,7 @@ class BrowserCollector:
             
             await asyncio.sleep(1)
             
-            requests = self.get_network_requests()
+            requests = await self.get_network_requests()
             new_structure = await self.get_page_structure()
             
             return Observation(
@@ -495,7 +497,7 @@ class BrowserCollector:
         await self._page.locator(selector).click()
         await self._page.wait_for_load_state("networkidle", timeout=5000)
         
-        return self.get_network_requests()
+        return await self.get_network_requests()
     
     async def fill_form(
         self,
@@ -528,7 +530,7 @@ class BrowserCollector:
                 await self._page.locator("button[type='submit'], button[type='button']").first.click()
                 await asyncio.sleep(2)
             
-            requests = self.get_network_requests()
+            requests = await self.get_network_requests()
             
             return Observation(
                 type=ObservationType.USER_INTERACTION,
@@ -548,7 +550,7 @@ class BrowserCollector:
 
 async def create_browser_collector(
     headless: bool = True,
-    timeout: int = 30000
+    timeout: int = 60000
 ) -> Optional[BrowserCollector]:
     """
     创建浏览器采集器

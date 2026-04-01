@@ -26,6 +26,7 @@ from .models import (
 )
 from .agent_brain import AgentBrain, create_agent_brain
 from .context_manager import ContextManager, create_context_manager
+from .environment import EnvironmentChecker
 from .collectors import (
     BrowserCollector, SourceAnalyzer, ResponseAnalyzer,
     create_browser_collector
@@ -104,6 +105,62 @@ class DiscoveryOrchestrator:
             except Exception:
                 pass
     
+    def _check_and_setup_environment(self) -> bool:
+        """
+        检查并设置环境依赖
+        
+        如果 Playwright 或系统依赖缺失，尝试自动安装。
+        
+        Returns:
+            bool: 环境是否就绪
+        """
+        print("[*] Checking Playwright installation...")
+        playwright_ok = EnvironmentChecker.check_playwright_installed()
+        if not playwright_ok:
+            print("[*] Playwright not found, installing...")
+            if not EnvironmentChecker.install_playwright():
+                print("[!] Failed to install Playwright")
+                return False
+            print("[*] Playwright installed successfully")
+        
+        print("[*] Checking system dependencies...")
+        missing_deps = EnvironmentChecker.check_system_deps()
+        if missing_deps:
+            print(f"[*] Missing system deps: {missing_deps}")
+            print("[*] Installing system dependencies...")
+            if not EnvironmentChecker.install_system_deps():
+                print("[!] Failed to install system dependencies")
+                return False
+            print("[*] System dependencies installed")
+        
+        print("[*] Checking Playwright browser...")
+        browser_ok = EnvironmentChecker.check_playwright_browser()
+        if not browser_ok:
+            print("[*] Playwright browser not found, installing Chromium...")
+            import subprocess
+            try:
+                result = subprocess.run(
+                    ['playwright', 'install', 'chromium'],
+                    capture_output=True,
+                    timeout=300
+                )
+                if result.returncode != 0:
+                    print(f"[!] Failed to install Chromium: {result.stderr.decode()}")
+                    return False
+                print("[*] Chromium installed successfully")
+            except Exception as e:
+                print(f"[!] Failed to install Chromium: {e}")
+                return False
+        
+        print("[*] Verifying browser can launch...")
+        final_check = EnvironmentChecker.check_all()
+        if final_check['can_launch_browser']:
+            print("[*] Environment ready for browser automation")
+            return True
+        else:
+            print(f"[!] Environment issues: {final_check['issues']}")
+            return False
+    
     async def run(self) -> DiscoveryContext:
         """
         运行发现流程
@@ -119,6 +176,14 @@ class DiscoveryOrchestrator:
         print("=" * 60)
         print(f"Target: {self.target}")
         print(f"Browser: {'Enabled' if self.use_browser else 'Disabled'}")
+        
+        if self.use_browser:
+            print("\n[*] Checking environment...")
+            env_ok = self._check_and_setup_environment()
+            if not env_ok:
+                print("[!] Browser environment not available, falling back to HTTP-only mode")
+                self.use_browser = False
+        
         print("=" * 60)
         
         try:
@@ -206,7 +271,7 @@ class DiscoveryOrchestrator:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             })
             
-            resp = self._session.get(self.target, timeout=10)
+            resp = self._session.get(self.target, timeout=30)
             
             self._process_http_response(resp, self.target)
             
@@ -245,7 +310,7 @@ class DiscoveryOrchestrator:
         
         if self._browser:
             try:
-                requests = self._browser.get_network_requests()
+                requests = await self._browser.get_network_requests()
                 for req in requests:
                     obs = Observation(
                         type=ObservationType.NETWORK_REQUEST,

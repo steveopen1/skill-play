@@ -13,6 +13,7 @@ Intelligent API Discovery Package
 - InsightGenerator: 洞察生成器
 - StrategyGenerator: 策略生成器
 - DiscoveryOrchestrator: 协调器
+- EnvironmentChecker: 环境检查器
 """
 
 from .agent_brain import AgentBrain, create_agent_brain
@@ -21,6 +22,7 @@ from .orchestrator import DiscoveryOrchestrator, run_discovery
 from .learning_engine import LearningEngine, create_learning_engine
 from .insight_generator import InsightGenerator, create_insight_generator
 from .strategy_generator import StrategyGenerator, create_strategy_generator
+from .environment import EnvironmentChecker
 from .models import (
     DiscoveryContext, Endpoint, Observation, Insight, Strategy, Action,
     NetworkRequest, Pattern, PageStructure, TechStack, AuthInfo,
@@ -46,6 +48,9 @@ __all__ = [
     'create_insight_generator',
     'StrategyGenerator',
     'create_strategy_generator',
+    
+    # Environment
+    'EnvironmentChecker',
     
     # Models
     'DiscoveryContext',
