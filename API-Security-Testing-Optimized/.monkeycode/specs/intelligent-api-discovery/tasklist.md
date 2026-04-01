@@ -17,14 +17,14 @@
 
 ### Phase 3: 学习与优化 (Learning & Optimization)
 
-- [ ] 3.1 实现 `LearningEngine` - 持续学习引擎
-- [ ] 3.2 实现 `InsightGenerator` - 洞察生成器
-- [ ] 3.3 实现 `StrategyGenerator` - 策略生成器
+- [x] 3.1 实现 `LearningEngine` - 持续学习引擎
+- [x] 3.2 实现 `InsightGenerator` - 洞察生成器
+- [x] 3.3 实现 `StrategyGenerator` - 策略生成器
 
 ### Phase 4: 集成与协调 (Integration)
 
 - [x] 4.1 实现 `DiscoveryOrchestrator` - 协调各组件
-- [ ] 4.2 更新 SKILL.md - 作为参考框架
+- [x] 4.2 更新 SKILL.md - 作为参考框架
 - [ ] 4.3 编写单元测试
 
 ### Phase 5: 完善与测试 (Polish & Testing)

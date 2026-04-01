@@ -120,12 +120,25 @@ Surface → Context → Causal → Strategic
 
 ```
 api-security-testing/
-├── SKILL.md                      # 本文件
+├── SKILL.md                      # Skill 定义
 ├── README.md                     # 用户文档
 ├── requirements.txt              # 依赖
 ├── scripts/
-│   ├── __init__.py
-│   ├── orchestrator.py          # 增强型编排器 (集成采集器联动)
+│   ├── intelligent_discovery/    # 智能 API 发现 (LLM 驱动)
+│   │   ├── __init__.py
+│   │   ├── models.py            # 数据模型
+│   │   ├── agent_brain.py       # LLM 决策引擎
+│   │   ├── context_manager.py   # 上下文管理
+│   │   ├── orchestrator.py      # 主协调器
+│   │   ├── learning_engine.py   # 持续学习引擎
+│   │   ├── insight_generator.py  # 洞察生成器
+│   │   ├── strategy_generator.py # 策略生成器
+│   │   └── collectors/          # 收集器
+│   │       ├── browser_collector.py
+│   │       ├── source_analyzer.py
+│   │       └── response_analyzer.py
+│   │
+│   ├── orchestrator.py          # 增强型编排器
 │   ├── collectors_coordinator.py # 采集器联动管理器
 │   ├── reasoning_engine.py      # 多层级推理引擎
 │   ├── context_manager.py        # 上下文管理器
@@ -148,6 +161,100 @@ api-security-testing/
     ├── api_test.yaml
     ├── auth_test.yaml
     └── vuln_scan.yaml
+```
+
+## 智能 API 发现 (Intelligent Discovery)
+
+### 核心设计原则
+
+1. **Agent 中心化**: LLM 是决策核心，不是辅助工具
+2. **无硬编码**: 所有策略由 Agent 实时生成
+3. **上下文驱动**: 每个决策基于当前上下文
+4. **持续学习**: Agent 在执行中不断更新理解
+
+### 架构
+
+```mermaid
+graph TB
+    subgraph "Agent Core"
+        A["Agent Brain<br/>(LLM Decision Engine)"]
+        C["Context Manager"]
+        L["Learning Engine"]
+        I["Insight Generator"]
+        S["Strategy Generator"]
+    end
+    
+    subgraph "Collectors"
+        B["Browser Collector"]
+        R["Response Analyzer"]
+        T["Source Analyzer"]
+    end
+    
+    A --> C
+    C --> B
+    C --> R
+    C --> T
+    B --> A
+    R --> A
+    T --> A
+    L --> A
+    I --> A
+    S --> A
+```
+
+### 发现流程
+
+```
+1. 初始化 → Agent 分析目标，建立初始上下文
+2. 观察 → Collector 收集信息（Browser/Sources/Responses）
+3. 推理 → InsightGenerator 从观察中生成洞察
+4. 策略 → StrategyGenerator 基于洞察生成策略
+5. 执行 → Agent 执行策略，触发更多观察
+6. 学习 → LearningEngine 更新上下文，重复 2-5 直到收敛
+```
+
+### 编程接口
+
+#### 基础使用
+
+```python
+from intelligent_discovery import run_discovery
+
+context = await run_discovery("https://target.com")
+print(f"Discovered {len(context.discovered_endpoints)} endpoints")
+```
+
+#### 完整控制
+
+```python
+from intelligent_discovery import DiscoveryOrchestrator
+
+orchestrator = DiscoveryOrchestrator(
+    target="https://target.com",
+    llm_client=None,  # 传入 LLM 客户端以启用 LLM 决策
+    use_browser=True,
+    max_iterations=50
+)
+
+context = await orchestrator.run()
+
+for endpoint in context.discovered_endpoints:
+    print(f"{endpoint.method} {endpoint.path}")
+```
+
+#### 事件回调
+
+```python
+orchestrator = DiscoveryOrchestrator(target)
+
+def on_discovery(data):
+    print(f"New endpoint found: {data}")
+
+def on_insight(insight):
+    print(f"Insight: {insight.content}")
+
+orchestrator.on('discovery', on_discovery)
+orchestrator.on('insight', on_insight)
 ```
 
 ## 编程接口
