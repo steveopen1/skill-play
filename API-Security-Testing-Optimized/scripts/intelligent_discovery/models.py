@@ -395,14 +395,33 @@ class DiscoveryContext:
         self.errors.append(error)
     
     def converged(self) -> bool:
-        """判断发现是否已收敛"""
+        """判断发现是否已收敛
+        
+        收敛条件：
+        1. 探索次数超过50次
+        2. 最近10次动作中动作类型单一（<=2种）且没有发现新端点
+        3. 或者发现超过20个端点
+        """
         if len(self.exploration_history) >= 50:
             return True
-        recent = self.exploration_history[-10:]
-        if len(recent) >= 5:
+        
+        # 如果还没有发现端点，不收敛
+        if len(self.discovered_endpoints) == 0:
+            return False
+        
+        # 如果发现了较多端点，认为可以收敛了
+        if len(self.discovered_endpoints) >= 20:
+            return True
+        
+        # 检查最近动作的重复度
+        if len(self.exploration_history) >= 10:
+            recent = self.exploration_history[-10:]
             unique_actions = len(set(a.type for a in recent))
-            if unique_actions <= 2:
+            
+            # 如果动作太单一且探索次数足够
+            if unique_actions <= 2 and len(self.exploration_history) >= 20:
                 return True
+        
         return False
     
     def get_high_confidence_endpoints(self, threshold: float = 0.7) -> List[Endpoint]:

@@ -143,6 +143,7 @@ class StrategyGenerator:
         actions = []
         reasoning_parts = []
         
+        # 1. 如果没有页面结构，先导航获取
         if not context.page_structures:
             actions.append(Action(
                 type=ActionType.NAVIGATE,
@@ -150,71 +151,100 @@ class StrategyGenerator:
                 reasoning="初始探索：获取页面结构"
             ))
             reasoning_parts.append("从初始导航开始")
+            return Strategy(
+                actions=actions,
+                reasoning="; ".join(reasoning_parts),
+                expected_outcome="获取页面结构",
+                confidence=0.5
+            )
         
-        opportunity_insights = [
-            i for i in insights if i.type == InsightType.OPPORTUNITY
-        ]
+        # 2. 基于上下文生成多样化的动作
+        last_page = context.page_structures[-1]
+        exploration_count = len(context.exploration_history)
         
-        for insight in opportunity_insights:
-            if "JS" in insight.content or "javascript" in insight.content.lower():
-                actions.append(Action(
-                    type=ActionType.ANALYZE_SOURCE,
-                    target="current_page",
-                    reasoning="分析页面 JS 文件"
-                ))
-                reasoning_parts.append("分析 JS 发现端点")
-        
-        if context.page_structures:
-            last_page = context.page_structures[-1]
-            
-            if last_page.forms and len(actions) < 3:
-                form = last_page.forms[0]
+        # 根据探索次数选择不同策略
+        if exploration_count < 3:
+            # 早期阶段：收集页面信息
+            if last_page.forms:
                 actions.append(Action(
                     type=ActionType.TYPE,
-                    target=form.get("selector", "input[type='text']"),
-                    params={"text": "test"},
-                    reasoning=f"测试表单: {form.get('selector')}"
+                    target="input[type='text']",
+                    params={"text": "admin"},
+                    reasoning="输入测试数据"
                 ))
-                reasoning_parts.append("测试表单交互")
+                reasoning_parts.append("输入测试数据")
                 
                 actions.append(Action(
-                    type=ActionType.SUBMIT,
-                    target=form.get("selector", "form"),
-                    reasoning="提交表单触发 API"
+                    type=ActionType.TYPE,
+                    target="input[type='password']",
+                    params={"text": "admin"},
+                    reasoning="输入密码"
                 ))
-                reasoning_parts.append("提交表单")
+                reasoning_parts.append("输入密码")
             
-            if last_page.interactive_elements and len(actions) < 4:
-                for element in last_page.interactive_elements[:2]:
-                    if element.get("type") in ["button", "link"]:
-                        actions.append(Action(
-                            type=ActionType.CLICK,
-                            target=element.get("selector"),
-                            reasoning=f"点击: {element.get('description', '')}"
-                        ))
-                        reasoning_parts.append(f"点击 {element.get('type')}")
-                        if len(actions) >= 4:
-                            break
-        
-        if len(actions) < 2:
             actions.append(Action(
                 type=ActionType.SCROLL,
                 target="current_page",
-                params={"direction": "down"},
-                reasoning="滚动触发懒加载"
+                params={"direction": "down", "amount": 500},
+                reasoning="向下滚动"
             ))
-            reasoning_parts.append("滚动页面")
+            reasoning_parts.append("向下滚动探索")
         
+        elif exploration_count < 10:
+            # 中期阶段：尝试交互
+            if last_page.interactive_elements:
+                for elem in last_page.interactive_elements[:3]:
+                    if elem.get("type") in ["button", "link"]:
+                        actions.append(Action(
+                            type=ActionType.CLICK,
+                            target=elem.get("selector"),
+                            reasoning=f"点击 {elem.get('description', elem.get('type'))}"
+                        ))
+                        reasoning_parts.append(f"点击 {elem.get('type')}")
+                        if len(actions) >= 3:
+                            break
+            
+            if len(actions) < 2:
+                actions.append(Action(
+                    type=ActionType.SCROLL,
+                    target="current_page",
+                    params={"direction": "down", "amount": 1000},
+                    reasoning="滚动页面"
+                ))
+                reasoning_parts.append("滚动探索")
+        
+        else:
+            # 后期阶段：深度探索和尝试其他方法
+            directions = ["down", "up", "left", "right"]
+            for i in range(2):
+                actions.append(Action(
+                    type=ActionType.SCROLL,
+                    target="current_page",
+                    params={"direction": directions[i % 4], "amount": 500},
+                    reasoning=f"滚动探索 {directions[i % 4]}"
+                ))
+                reasoning_parts.append(f"滚动{directions[i % 4]}")
+        
+        # 始终添加等待动作
         actions.append(Action(
             type=ActionType.WAIT,
             target=None,
-            params={"seconds": 1},
+            params={"seconds": 2},
             reasoning="等待网络请求完成"
         ))
         
+        # 添加滚动后再次滚动（触发懒加载）
+        if exploration_count > 0:
+            actions.append(Action(
+                type=ActionType.SCROLL,
+                target="current_page",
+                params={"direction": "down", "amount": 2000},
+                reasoning="快速滚动触发懒加载"
+            ))
+        
         return Strategy(
             actions=actions,
-            reasoning="; ".join(reasoning_parts) if reasoning_parts else "默认探索策略",
+            reasoning="; ".join(reasoning_parts) if reasoning_parts else "多样化探索策略",
             expected_outcome="发现更多 API 端点",
             confidence=0.5
         )

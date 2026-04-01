@@ -190,6 +190,12 @@ class DiscoveryOrchestrator:
             await self._initialize()
             
             iteration = 0
+            
+            # 预探测阶段：测试常见 API 端点
+            if not self.context_manager.converged():
+                print("\n[*] Pre-scanning common API endpoints...")
+                await self._probe_common_endpoints()
+            
             while self._running and iteration < self.max_iterations:
                 if time.time() - start_time > self.max_duration:
                     print("\n[!] Max duration reached")
@@ -252,6 +258,81 @@ class DiscoveryOrchestrator:
             self._emit('complete', self.context)
         
         return self.context
+    
+    async def _probe_common_endpoints(self):
+        """探测常见的 API 端点"""
+        if not self._session:
+            import requests
+            self._session = requests.Session()
+            self._session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+        
+        # 常见的后台管理 API 端点
+        common_endpoints = [
+            # RuoYi-Vue 常见端点
+            "/prod-api/common/permission/getMenu",
+            "/prod-api/system/user/profile",
+            "/prod-api/system/menu/list",
+            "/prod-api/system/role/list",
+            "/prod-api/system/dept/list",
+            "/prod-api/system/user/list",
+            "/prod-api/system/dict/data/list",
+            "/prod-api/system/config/configKey",
+            "/prod-api/system/post/list",
+            "/prod-api/system/notice/list",
+            "/prod-api/system/login/logout",
+            "/prod-api/getSiteList",
+            "/prod-api/ws/info",
+            "/prod-api/license/valid",
+            "/prod-api/captchaImage",
+            "/prod-api/login",
+            # 其他常见端点
+            "/api/system/user/list",
+            "/api/system/menu/list",
+            "/api/system/role/list",
+            "/api/common/permission/getMenu",
+        ]
+        
+        found_count = 0
+        for path in common_endpoints:
+            url = self.target.rstrip('/') + path
+            try:
+                # Try GET
+                resp = self._session.get(url, timeout=3)
+                if resp.status_code == 200:
+                    try:
+                        data = resp.json()
+                        if data.get('code') == 200 or 'data' in data:
+                            endpoint = Endpoint(
+                                path=path,
+                                method="GET",
+                                source="common_probe",
+                                confidence=0.7
+                            )
+                            if self.context_manager.add_endpoint(endpoint):
+                                found_count += 1
+                                print(f"    [GET] {path}")
+                    except:
+                        pass
+                
+                # Try POST
+                resp = self._session.post(url, json={}, timeout=3)
+                if resp.status_code == 200:
+                    endpoint = Endpoint(
+                        path=path,
+                        method="POST",
+                        source="common_probe",
+                        confidence=0.7
+                    )
+                    if self.context_manager.add_endpoint(endpoint):
+                        found_count += 1
+                        print(f"    [POST] {path}")
+                        
+            except:
+                pass
+        
+        print(f"    Probed {found_count} new endpoints")
     
     async def _initialize(self):
         """初始化阶段"""
