@@ -230,6 +230,31 @@ analyze_spa('http://58.215.18.57:91')
 
 ### 1.2 发现云存储端点? → 触发阶段 5
 
+**核心原则**: 路径模式只是发现线索，**必须通过语义分析确认用途**。
+
+| 发现线索 | 需要分析的语义 | 确认条件 |
+|---------|--------------|---------|
+| `/file/`, `/upload/` | 这是文件上传接口吗？ | 需要分析参数、响应、Content-Type |
+| `oss-`, `cos-` 域名 | 这是云存储服务吗？ | 需要检查响应头或尝试访问 |
+| `/minio/` 路径 | 这是 MinIO 服务吗？ | 需要检查响应是否符合存储特征 |
+| XML 响应包含 `<ListBucket>` | 这是存储桶吗？ | 确认后可触发阶段 5 |
+
+**错误示例** (机械匹配):
+```
+发现 /user/profile → 判断为 IDOR 风险 ❌
+```
+
+**正确示例** (语义分析):
+```
+发现 /user/profile
+    ↓ 语义分析
+    这是获取当前登录用户信息的接口吗？
+    ↓
+    是 → 当前用户信息，隐私泄露风险
+    是 + 无认证 → 认证绕过
+    否 → 可能需要进一步测试
+```
+
 **触发条件**: 从 JS/响应中发现以下任一模式
 
 | 模式类型 | 检测特征 | 示例 |
@@ -413,149 +438,175 @@ vulnerability_testing('http://58.215.18.57:91/icp-api')
 
 ### 2.3 发现 GraphQL? → 触发专项测试
 
-**触发条件**:
+**核心原则**: 发现 GraphQL 端点后，**必须通过 introspection 分析 schema 理解其语义**。
 
-| 特征 | 检测方法 |
-|------|---------|
-| URL 包含 `/graphql`, `/graphQL` | 路径匹配 |
-| 响应包含 `application/graphql` | Content-Type |
-| 响应包含 `"__schema"`, `"__type"` | GraphQL Introspection |
-| 响应包含 `{"data":` + GraphQL 结构 | JSON 结构 |
+| 发现的线索 | 语义分析问题 | 确认条件 |
+|-----------|-------------|---------|
+| `/graphql` | 这是 GraphQL 端点吗？ | 发送 introspection 查询 |
+| `__schema` 响应 | Schema 暴露了哪些类型？ | 分析字段权限 |
+| Introspection 禁用 | 为什么禁用？ | 可能有问题 |
 
-**GraphQL 专项测试** (参考 `references/graphql-guidance.md`):
+**错误示例** (机械匹配):
+```
+发现 /graphql → 调用 GraphQL 测试清单 ❌
+```
 
-```python
-GRAPHQL_TRIGGER_PATTERNS = {
-    'path': ['/graphql', '/graphQL', '/api/graphql'],
-    'content': ['__schema', '__type', 'application/graphql'],
-    'header': ['application/graphql']
-}
-
-def is_graphql_endpoint(endpoint, response) -> bool:
-    """判断是否为 GraphQL 端点"""
-    # 1. 路径匹配
-    for pattern in GRAPHQL_TRIGGER_PATTERNS['path']:
-        if pattern in endpoint.lower():
-            return True
-    
-    # 2. 响应 Content-Type
-    if response and 'application/graphql' in response.headers.get('Content-Type', ''):
-        return True
-    
-    # 3. 响应内容包含 GraphQL 结构
-    if response:
-        text = response.text
-        if '__schema' in text or '__type' in text:
-            return True
-        if '"data":' in text and '{' in text:
-            # 可能是 GraphQL JSON 响应
-            pass
-    
-    return False
+**正确示例** (语义分析):
+```
+发现 /graphql
+    ↓ 语义分析
+    1. 发送 introspection 查询
+       ↓
+    2. 分析 Schema 发现了哪些类型和字段
+       ↓
+    3. 分析字段权限：
+       - 哪些字段需要认证？
+       - 哪些字段可被未授权访问？
+       ↓
+    4. 分析嵌套查询风险：
+       - 是否有深度限制？
+       - 是否有复杂度限制？
+       ↓
+    5. 分析 mutation 权限：
+       - 哪些 mutation 需要 admin？
 ```
 
 ### 2.4 发现 IDOR/越权? → 触发权限测试
 
-**触发条件**:
+**核心原则**: 路径和参数只是线索，**必须通过语义分析判断权限模型**。
 
-| 特征 | 说明 |
-|------|------|
-| 端点包含 `/user/{id}`, `/order/{id}` | 资源 ID 参数 |
-| 响应包含其他用户数据 | 数据泄露 |
-| 修改请求可指定资源 ID | 权限检查 |
+| 发现的线索 | 语义分析问题 | 确认条件 |
+|-----------|-------------|---------|
+| `/user/{id}` | 这是获取他人信息还是当前用户？ | 需要分析参数含义 |
+| `id=123` | 这个 ID 是可枚举的吗？ | 需要测试不同 ID |
+| 响应包含其他用户数据 | 是否是权限问题？ | 需要对比认证/非认证响应 |
 
-```python
-IDOR_PATTERNS = {
-    'path': ['/user/', '/users/', '/order/', '/orders/', '/account/', '/profile/'],
-    'param': ['id=', 'userId=', 'orderId=', 'account_id='],
-}
+**错误示例** (机械匹配):
+```
+发现 /user/123 → 判断为 IDOR ❌
+```
 
-def check_idor_indicators(endpoint, response) -> bool:
-    """检查 IDOR 风险"""
-    # 1. 路径模式
-    for pattern in IDOR_PATTERNS['path']:
-        if pattern in endpoint:
-            return True
-    
-    # 2. 响应内容泄露其他用户数据
-    if response and response.status_code == 200:
-        # 检查是否包含其他用户信息
-        patterns = ['"id":', '"username":', '"email":', '"phone":']
-        if any(p in response.text for p in patterns):
-            return True
-    
-    return False
+**正确示例** (语义分析):
+```
+发现 /user/123
+    ↓ 语义分析
+    这是一个用户查询接口
+    ↓
+    分析：使用当前用户的 session token 访问
+    ↓
+    返回当前用户信息 → 正常
+    返回其他用户信息 → IDOR 漏洞 ✅
 ```
 
 ### 2.5 发现暴力破解风险? → 触发登录测试
 
-**触发条件**:
+**核心原则**: 发现登录接口后，**必须分析其防护措施的有效性**。
 
-| 特征 | 说明 |
-|------|------|
-| 端点包含 `/login`, `/auth`, `/signin` | 登录接口 |
-| `/register`, `/forgot-password` | 注册/密码重置 |
-| 无验证码或 rate limit | 防护缺失 |
+| 发现的线索 | 语义分析问题 | 确认条件 |
+|-----------|-------------|---------|
+| `/login` | 有验证码吗？验证码有效吗？ | 需要实际测试 |
+| `/auth` | 有 rate limit 吗？ | 需要发送多次请求测试 |
+| `captcha` 参数 | 验证码是否可绕过？ | 需要分析验证码逻辑 |
+| `lockout` 响应 | 账户锁定机制是否存在？ | 需要测试暴力破解 |
 
-```python
-BRUTE_FORCE_PATTERNS = {
-    'path': ['/login', '/auth', '/signin', '/logon', '/register', '/forgot', '/reset'],
-    'keyword': ['password', 'username', 'captcha', 'verify']
-}
+**错误示例** (机械匹配):
+```
+发现 /login → 判断为暴力破解风险 ❌
+```
 
-def check_brute_force_risk(endpoint) -> bool:
-    """检查暴力破解风险"""
-    endpoint_lower = endpoint.lower()
-    
-    # 1. 登录相关端点
-    for pattern in BRUTE_FORCE_PATTERNS['path']:
-        if pattern in endpoint_lower:
-            return True
-    
-    # 2. 包含敏感参数
-    for pattern in BRUTE_FORCE_PATTERNS['keyword']:
-        if pattern in endpoint_lower:
-            return True
-    
-    return False
+**正确示例** (语义分析):
+```
+发现 /login
+    ↓ 语义分析
+    1. 是否需要验证码？
+       - 不需要 → 确认暴力破解风险 ✅
+       - 需要验证码 → 验证码是否能防止机器？
+           - 可识别 → 低风险
+           - 可绕过/无 → 确认暴力破解风险 ✅
+    ↓
+    2. 是否有 rate limit？
+       - 无限制 → 确认暴力破解风险 ✅
+       - 有 5 次限制 → 需要测试限制是否严格
 ```
 
 ### 2.6 发现 WebSocket? → 触发 WS 测试
 
-**触发条件**:
+**核心原则**: 发现 WebSocket 端点后，**必须分析其用途和安全机制**。
 
-| 特征 | 检测方法 |
-|------|---------|
-| URL 包含 `/ws`, `/websocket` | 路径匹配 |
-| 响应头包含 `Upgrade: websocket` | HTTP 升级 |
-| 响应包含 `websocket` 关键字 | 内容匹配 |
+| 发现的线索 | 语义分析问题 | 确认条件 |
+|-----------|-------------|---------|
+| `/ws` | 这是什么类型的连接？ | 实时数据？推送？ |
+| `Upgrade: websocket` | 连接是否需要认证？ | 分析握手过程 |
+| WS 协议 | 传输的数据敏感吗？ | 分析数据内容 |
+| WS 响应 | 是否有注入风险？ | 测试特殊字符 |
 
-```python
-WEBSOCKET_PATTERNS = {
-    'path': ['/ws', '/websocket', '/ws/'],
-    'header': ['upgrade', 'websocket'],
-    'content': ['websocket', 'ws://', 'wss://']
-}
+**错误示例** (机械匹配):
+```
+发现 /ws → 判断为 WebSocket 测试 ❌
+```
 
-def check_websocket_endpoint(endpoint, response) -> bool:
-    """判断是否需要 WebSocket 测试"""
-    # 1. 路径匹配
-    for pattern in WEBSOCKET_PATTERNS['path']:
-        if pattern in endpoint.lower():
-            return True
-    
-    # 2. 响应头
-    if response:
-        upgrade = response.headers.get('Upgrade', '').lower()
-        if 'websocket' in upgrade:
-            return True
-    
-    return False
+**正确示例** (语义分析):
+```
+发现 /ws
+    ↓ 语义分析
+    1. 这个 WS 服务的用途是？
+       - 实时通知 → 分析通知内容是否敏感
+       - 数据推送 → 分析推送的数据类型
+       - 双向通信 → 需要测试输入验证
+    ↓
+    2. 是否有认证？
+       - 无认证 → 数据泄露风险 ✅
+       - 有 token → 验证 token 是否可伪造
+    ↓
+    3. 是否有输入验证？
+       - 无验证 → 注入风险 ✅
 ```
 
 ### 2.7 阶段间循环
 
+**核心原则**: 根据**接口语义**决定下一步，路径模式只是发现线索。
+
 ```
+阶段 1: 资产发现
+    │
+    ├── 发现 /graphql 相关
+    │       ↓ 语义分析
+    │       这是 GraphQL 端点吗？ → introspection 查询
+    │       ↓
+    │       分析 Schema 结构和权限 → 阶段 2.3
+    │
+    ├── 发现 /ws 相关
+    │       ↓ 语义分析
+    │       这是 WebSocket 服务吗？ → 检查协议升级
+    │       ↓
+    │       分析连接用途和认证 → 阶段 2.6
+    │
+    ├── 发现 /login 相关
+    │       ↓ 语义分析
+    │       这是登录接口吗？ → 检查防护措施
+    │       ↓
+    │       分析验证码、rate limit → 阶段 2.5
+    │
+    ├── 发现 /user/{id} 相关
+    │       ↓ 语义分析
+    │       这会泄露他人信息吗？ → 对比响应
+    │       ↓
+    │       分析权限模型 → 阶段 2.4
+    │
+    ├── 发现 /file/, /minio/ 相关
+    │       ↓ 语义分析
+    │       这是存储服务吗？ → 检查响应特征
+    │       ↓
+    │       确认后触发 → 阶段 5
+    │
+    └── 其他
+            ↓ 语义分析
+            这是什么类型的接口？ → 根据用途分类
+            ↓
+            继续阶段 2.1
+```
+
+**重要**: 路径只是发现线索，**语义分析决定下一步**。
 阶段 1: 资产发现
     │
     ├── 发现 /graphql → GraphQL 专项 → 阶段 2.3
@@ -605,64 +656,48 @@ AND 满足以下至少一项 P1:
 
 ### 2.2 发现云存储特征? → 触发阶段 5
 
-**自动检测决策**: 在阶段 2 分析过程中，发现以下任一情况应立即触发云存储检测
+**核心原则**: 发现存储相关接口后，**必须通过响应分析确认是否为存储服务**。
 
-```python
-CLOUD_TRIGGER_PATTERNS = {
-    # 端点路径特征
-    'path': [
-        '/file/', '/files/', '/upload/', '/uploads/',
-        '/storage/', '/bucket/', '/oss/', '/cos/', '/s3/',
-        '/minio/', '/minio-api/', '/api/file/', '/api/upload/'
-    ],
-    # URL 域名特征
-    'domain': [
-        'oss-', 'aliyuncs.com', 'cos.', 'myqcloud.com',
-        'obs.', 'myhwclouds.com', 's3.', 'amazonaws.com',
-        'minio', ':9000', ':9001'
-    ],
-    # 响应 Header 特征
-    'header': [
-        'x-oss-', 'x-amz-', 'x-minio-', 'x-cos-', 'x-obs-'
-    ],
-    # 响应内容特征
-    'content': [
-        '<ListBucket', '<AccessControlPolicy', 'ListBucketResult'
-    ]
-}
+| 发现的线索 | 语义分析问题 | 确认条件 |
+|-----------|-------------|---------|
+| `/file/upload` | 这是文件上传接口吗？ | 检查 Content-Type 和响应 |
+| 响应包含 XML `<ListBucket>` | 这是存储桶吗？ | 确认后可触发阶段 5 |
+| 域名包含 `oss-` | 这是云存储吗？ | 需要尝试访问或检查 Header |
 
-def check_and_trigger_cloud_storage(response, endpoint) -> bool:
-    """检查是否应触发云存储检测"""
-    
-    # 1. 检查端点路径
-    for pattern in CLOUD_TRIGGER_PATTERNS['path']:
-        if pattern in endpoint.lower():
-            print(f"[Cloud Trigger] 匹配路径模式: {pattern}")
-            return True
-    
-    # 2. 检查 URL 域名
-    for pattern in CLOUD_TRIGGER_PATTERNS['domain']:
-        if pattern in endpoint.lower():
-            print(f"[Cloud Trigger] 匹配域名模式: {pattern}")
-            return True
-    
-    # 3. 检查响应头
-    if response:
-        headers_text = str(response.headers).lower()
-        for pattern in CLOUD_TRIGGER_PATTERNS['header']:
-            if pattern in headers_text:
-                print(f"[Cloud Trigger] 匹配响应头: {pattern}")
-                return True
-        
-        # 4. 检查响应内容
-        content_text = response.text.lower()
-        for pattern in CLOUD_TRIGGER_PATTERNS['content']:
-            if pattern in content_text:
-                print(f"[Cloud Trigger] 匹配响应内容: {pattern}")
-                return True
-    
-    return False
+**错误示例** (机械匹配):
 ```
+发现 /file/profile → 判断为云存储 ❌
+```
+
+**正确示例** (语义分析):
+```
+发现 /file/upload
+    ↓ 语义分析
+    1. 分析响应：
+       - Content-Type 是 application/json → 可能是 API，非存储
+       - Content-Type 是 XML + 包含 <ListBucket> → 确认是存储桶 ✅
+       - 响应为空/403 → 可能是存储服务但受限
+    ↓
+    2. 检查响应头：
+       - 包含 X-OSS-* → 确认是阿里云 OSS ✅
+       - 包含 X-Amz-* → 确认是 AWS S3 ✅
+    ↓
+    3. 尝试根路径访问：
+       - 返回文件列表 → 确认公开存储桶 ✅
+       - 返回 403 → 可能需要认证
+```
+
+**发现线索** (仅作为提示):
+```python
+CLOUD_INDICATORS = {
+    'path_hint': ['/file/', '/upload/', '/storage/', '/bucket/', '/oss/', '/cos/', '/minio/'],
+    'domain_hint': ['oss-', 'cos.', 'minio', ':9000'],
+    'header_hint': ['x-oss-', 'x-amz-', 'x-minio-'],
+    'content_hint': ['<ListBucket', '<AccessControlPolicy']
+}
+```
+
+**重要**: 这些只是发现线索，**必须通过语义分析确认**。
 
 **决策树**:
 ```
