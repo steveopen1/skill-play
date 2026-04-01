@@ -166,6 +166,100 @@ class CloudStorageTester:
         '/analytics/', '/stats/', '/monitoring/'
     ]
     
+    # 常见存储目录
+    COMMON_STORAGE_PATHS = [
+        # 通用
+        '', '/', '/tmp/', '/temp/', '/temp',
+        '/public/', '/public',
+        '/private/', '/private',
+        '/data/', '/data',
+        '/backup/', '/backup', '/backups/',
+        '/logs/', '/logs', '/log/',
+        '/config/', '/configs/', '/configuration/',
+        '/uploads/', '/uploads',
+        '/files/', '/files',
+        '/documents/', '/docs/',
+        '/images/', '/img/', '/pictures/',
+        '/videos/', '/video/',
+        '/audio/', '/music/',
+        '/archives/', '/archive/',
+        '/cache/', '/.cache/',
+        
+        # 年份目录
+        '/2020/', '/2021/', '/2022/', '/2023/', '/2024/', '/2025/',
+        '/2020/', '/2021/', '/2022/', '/2023/', '/2024/', '/2025/',
+        
+        # OSS 特有
+        '/oss/', '/ossfs/',
+        '/dump/', '/dumps/',
+        '/sql/', '/mysql/',
+        '/mongo/', '/mongodump/',
+        '/es/', '/elastic/',
+        
+        # 备份相关
+        '/db/', '/database/', '/databases/',
+        '/bak/', '/BAK/', '/backup/db/',
+        '/backup/sql/',
+        '/backup/mysql/',
+        
+        # 日志相关
+        '/accesslog/', '/access_log/',
+        '/errorlog/', '/error_log/',
+        '/applog/', '/app_log/',
+        '/nginx/', '/apache/', '/httpd/',
+        
+        # 配置密钥
+        '/keys/', '/certs/', '/certificates/',
+        '/secrets/', '/.secrets/',
+        '/credentials/', '/.credentials/',
+        '/env/', '/.env/', '/environments/',
+        
+        # 用户数据
+        '/users/', '/user/', '/profiles/',
+        '/accounts/', '/customers/',
+        '/photos/', '/avatars/',
+        '/attachments/', '/uploads/user/',
+        
+        # 敏感文件位置
+        '/www/', '/web/', '/html/',
+        '/static/', '/assets/',
+        '/uploads/static/',
+    ]
+    
+    # 目录递减探测深度
+    MAX_DEPTH = 5
+    
+    # 常见文件扩展名
+    COMMON_EXTENSIONS = [
+        '.txt', '.log', '.json', '.xml', '.yaml', '.yml',
+        '.sql', '.bak', '.backup', '.db', '.dump',
+        '.env', '.conf', '.config', '.cfg', '.ini',
+        '.key', '.pem', '.crt', '.p12', '.pfx', '.jks',
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg',
+        '.mp4', '.avi', '.mov', '.wmv',
+        '.mp3', '.wav', '.flac',
+        '.zip', '.tar', '.gz', '.rar', '.7z',
+        '.csv', '.tsv', '.dat',
+    ]
+    
+    # 目录递减探测深度
+    MAX_DEPTH = 5
+    
+    # 常见文件扩展名
+    COMMON_EXTENSIONS = [
+        '.txt', '.log', '.json', '.xml', '.yaml', '.yml',
+        '.sql', '.bak', '.backup', '.db', '.dump',
+        '.env', '.conf', '.config', '.cfg', '.ini',
+        '.key', '.pem', '.crt', '.p12', '.pfx', '.jks',
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg',
+        '.mp4', '.avi', '.mov', '.wmv',
+        '.mp3', '.wav', '.flac',
+        '.zip', '.tar', '.gz', '.rar', '.7z',
+        '.csv', '.tsv', '.dat',
+    ]
+    
     def __init__(self, session: requests.Session = None):
         """初始化云存储测试器"""
         self.session = session or requests.Session()
@@ -491,6 +585,227 @@ class CloudStorageTester:
         except Exception as e:
             return False, f"ACL 检测失败: {e}"
     
+    def test_common_paths(self, bucket_url: str, storage_type: str = None) -> Tuple[bool, List[Dict]]:
+        """
+        测试常见存储目录
+        探测存储桶中的常见目录结构，发现更多敏感路径
+        """
+        print(f"[CloudStorage] 测试常见存储目录...")
+        found = []
+        
+        for path in self.COMMON_STORAGE_PATHS:
+            try:
+                test_url = bucket_url.rstrip('/') + path
+                resp = self.session.get(test_url, timeout=10)
+                
+                if resp.status_code == 200:
+                    content_len = len(resp.content)
+                    
+                    # 检查是否是文件列表或目录
+                    is_list = False
+                    file_count = 0
+                    
+                    # 尝试解析 XML
+                    try:
+                        root = ET.fromstring(resp.text)
+                        files = [e.text for e in root.iter() 
+                                if e.tag.endswith('Key') and e.text]
+                        if files:
+                            is_list = True
+                            file_count = len(files)
+                    except:
+                        pass
+                    
+                    # 检查内容类型
+                    if resp.headers.get('Content-Type', '').startswith('application/xml'):
+                        is_list = True
+                    
+                    if is_list:
+                        found.append({
+                            'path': path,
+                            'type': 'listable_directory',
+                            'file_count': file_count,
+                            'size': content_len,
+                            'url': test_url
+                        })
+                        print(f"  [FOUND] 目录: {path} (文件数: {file_count})")
+                    elif content_len > 1000:
+                        # 可能是文件
+                        found.append({
+                            'path': path,
+                            'type': 'file',
+                            'size': content_len,
+                            'url': test_url
+                        })
+                        print(f"  [FOUND] 文件: {path} ({content_len} bytes)")
+                        
+            except requests.exceptions.Timeout:
+                pass
+            except Exception as e:
+                pass
+        
+        return len(found) > 0, found
+    
+    def test_directory_depth(self, bucket_url: str, storage_type: str = None, max_depth: int = None) -> Tuple[bool, List[Dict]]:
+        """
+        目录递减探测
+        逐层深入探测目录结构，发现深层敏感文件
+        
+        Args:
+            bucket_url: 存储桶 URL
+            storage_type: 存储类型
+            max_depth: 最大探测深度，默认 5
+        """
+        if max_depth is None:
+            max_depth = self.MAX_DEPTH
+            
+        print(f"[CloudStorage] 目录递减探测 (最大深度: {max_depth})...")
+        found = []
+        
+        # 第一步：获取根目录文件列表
+        try:
+            resp = self.session.get(bucket_url, timeout=10)
+            if resp.status_code == 200:
+                try:
+                    root = ET.fromstring(resp.text)
+                    # 提取所有 Key
+                    all_keys = [e.text for e in root.iter() 
+                               if e.tag.endswith('Key') and e.text]
+                    
+                    if all_keys:
+                        print(f"  [Depth 0] 根目录: {len(all_keys)} 个文件/目录")
+                        
+                        # 分类文件和目录
+                        dirs = set()
+                        files = []
+                        
+                        for key in all_keys:
+                            if key.endswith('/'):
+                                dirs.add(key)
+                            else:
+                                files.append(key)
+                        
+                        # 记录发现
+                        if dirs:
+                            found.append({
+                                'depth': 0,
+                                'path': '/',
+                                'type': 'directory',
+                                'subdirs': list(dirs)[:20],  # 最多记录20个
+                                'file_count': len(files)
+                            })
+                        
+                        # 递归探测子目录 (限制深度)
+                        def explore_directory(parent_url: str, keys: List[str], depth: int):
+                            if depth >= max_depth:
+                                return
+                            
+                            subdirs = set()
+                            for key in keys:
+                                if '/' in key and not key.endswith('/'):
+                                    # 文件可能在子目录中
+                                    subdir = key.rsplit('/', 1)[0] + '/'
+                                    subdirs.add(subdir)
+                            
+                            for subdir in subdirs:
+                                if depth + 1 < max_depth:
+                                    try:
+                                        subdir_url = parent_url.rstrip('/') + '/' + subdir.lstrip('/')
+                                        subdir_url = parent_url + subdir if parent_url.endswith('/') else parent_url + '/' + subdir
+                                        
+                                        resp = self.session.get(subdir_url, timeout=10)
+                                        if resp.status_code == 200:
+                                            try:
+                                                sub_root = ET.fromstring(resp.text)
+                                                sub_keys = [e.text for e in sub_root.iter() 
+                                                          if e.tag.endswith('Key') and e.text]
+                                                
+                                                if sub_keys:
+                                                    print(f"  [Depth {depth+1}] {subdir}: {len(sub_keys)} 个文件")
+                                                    
+                                                    sub_files = [k for k in sub_keys if not k.endswith('/')]
+                                                    if sub_files:
+                                                        found.append({
+                                                            'depth': depth + 1,
+                                                            'path': subdir,
+                                                            'type': 'directory',
+                                                            'sample_files': sub_files[:10],
+                                                            'file_count': len(sub_files)
+                                                        })
+                                                    
+                                                    # 继续递归
+                                                    if depth + 1 < max_depth:
+                                                        explore_directory(subdir_url, sub_keys, depth + 1)
+                                                        
+                                            except:
+                                                pass
+                                    except:
+                                        pass
+                        
+                        # 开始递归探测
+                        explore_directory(bucket_url, all_keys, 0)
+                        
+                except:
+                    pass
+                    
+        except Exception as e:
+            print(f"  [ERROR] 目录递减探测失败: {e}")
+        
+        return len(found) > 0, found
+    
+    def test_file_extensions(self, bucket_url: str, storage_type: str = None) -> Tuple[bool, List[Dict]]:
+        """
+        测试常见文件扩展名
+        尝试访问常见文件类型，检查是否可下载
+        """
+        print(f"[CloudStorage] 测试常见文件扩展名...")
+        found = []
+        
+        # 测试常见的敏感文件扩展名
+        test_files = [
+            '.env', '.git/config', '.git/HEAD',
+            '.htaccess', '.htpasswd',
+            'wp-config.php', 'config.php', 'settings.py',
+            'database.yml', 'credentials.json',
+            'id_rsa', 'id_rsa.pub', 'authorized_keys',
+            'web.config', 'global.asax',
+            '.sql', '.bak', '.backup', '.db', '.dump',
+            '.log', '.txt', '.pdf', '.xlsx', '.docx',
+        ]
+        
+        for test_file in test_files:
+            try:
+                test_url = bucket_url.rstrip('/') + '/' + test_file.lstrip('/')
+                resp = self.session.get(test_url, timeout=10)
+                
+                if resp.status_code == 200 and len(resp.content) > 0:
+                    content = resp.text[:200].lower()
+                    
+                    # 检查是否包含敏感内容
+                    sensitive = any(kw in content for kw in [
+                        'password', 'secret', 'key', 'token', 'api',
+                        'database', 'db_', 'mysql', 'postgres',
+                        'aws_access', 'aws_secret'
+                    ])
+                    
+                    found.append({
+                        'file': test_file,
+                        'size': len(resp.content),
+                        'has_sensitive': sensitive,
+                        'url': test_url,
+                        'content_preview': resp.text[:100]
+                    })
+                    
+                    if sensitive:
+                        print(f"  [FOUND] 敏感文件: {test_file} ({len(resp.content)} bytes)")
+                    else:
+                        print(f"  [FOUND] 文件: {test_file} ({len(resp.content)} bytes)")
+                        
+            except:
+                pass
+        
+        return len(found) > 0, found
+    
     def full_test(self, url: str, storage_type: str = None) -> Tuple[List[Dict], str]:
         """
         执行完整云存储安全测试
@@ -608,8 +923,48 @@ class CloudStorageTester:
                 'provider': storage_type
             })
         
-        # 9. ACL
-        print("[CloudStorage] [8/8] 测试 ACL 配置...")
+        # 9. 常见存储目录
+        print("[CloudStorage] [9/11] 测试常见存储目录...")
+        has_common, common_paths = self.test_common_paths(url, storage_type)
+        if has_common:
+            for cp in common_paths[:10]:  # 最多记录10个
+                results.append({
+                    'type': 'Common Storage Path',
+                    'severity': 'Medium',
+                    'evidence': f"{cp.get('path')} ({cp.get('type')}, {cp.get('file_count', cp.get('size', 'N/A'))}",
+                    'url': cp.get('url', url),
+                    'provider': storage_type
+                })
+        
+        # 10. 目录递减探测
+        print("[CloudStorage] [10/11] 目录递减探测...")
+        has_depth, depth_results = self.test_directory_depth(url, storage_type)
+        if has_depth:
+            for dr in depth_results[:5]:  # 最多记录5个深度
+                results.append({
+                    'type': 'Directory Depth Discovery',
+                    'severity': 'Medium',
+                    'evidence': f"Depth {dr.get('depth')}: {dr.get('path')} ({dr.get('file_count', 'N/A')} files)",
+                    'url': url,
+                    'provider': storage_type
+                })
+        
+        # 11. 文件扩展名测试
+        print("[CloudStorage] [11/11] 测试文件扩展名...")
+        has_ext, ext_results = self.test_file_extensions(url, storage_type)
+        if has_ext:
+            for er in ext_results[:10]:  # 最多记录10个
+                if er.get('has_sensitive'):
+                    results.append({
+                        'type': 'Sensitive File Extension',
+                        'severity': 'High',
+                        'evidence': f"{er.get('file')} ({er.get('size')} bytes) - 包含敏感内容",
+                        'url': er.get('url', url),
+                        'provider': storage_type
+                    })
+        
+        # ACL
+        print("[CloudStorage] [12/12] 测试 ACL 配置...")
         acl_issue, msg = self.test_acl_public(url, storage_type)
         if acl_issue:
             results.append({
