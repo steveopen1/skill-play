@@ -14,6 +14,7 @@ trigger:
     - "检查安全问题"
     - "安全报告"
     - "全流程测试"
+    - "完整测试"
   patterns:
     - "(?:帮我)?(?:进行?|做)(?:api|接口|安全)?(?:测试|检测|扫描)"
     - "(?:帮我)?(?:检查?|发现?)(?:api|安全)?(?:漏洞|问题)"
@@ -27,324 +28,290 @@ trigger:
 
 ---
 
-## 核心能力架构
+## 强制执行声明
+
+**本 Skill 必须完整执行，不允许跳过任何阶段。**
 
 ```
-SKILL.md (决策框架)
-    ↓ 指导
-core/ (能力池，按需调用)
-    ├── orchestrator.py      # 智能编排
-    ├── browser_tester.py     # 浏览器测试 (SPA/JS分析)
-    ├── deep_api_tester.py    # API 深度测试
-    ├── api_fuzzer.py         # 模糊测试
-    └── reasoning_engine.py  # 推理引擎 (多维度分析)
+重要：
+1. Agent 必须执行所有阶段，不得跳过
+2. 前置检查是强制性的，必须完成
+3. 发现的模块能力必须调用，除非明确不可用
+4. 所有判断必须基于多维度分析，不得仅凭单一指标
 ```
 
 ---
 
-## 多维度判断框架
+## 阶段 0: 前置检查 (强制执行)
 
-### 判断维度总览
+**触发**: Skill 激活后立即执行，不得跳过
 
-| 维度 | 说明 | 判断依据 |
-|------|------|---------|
-| **D1: 状态码** | HTTP 响应状态 | 200/401/403/404/500 |
-| **D2: 响应内容** | 数据有效性 | 业务数据/错误信息/空响应 |
-| **D3: 认证要求** | 认证绕过检测 | Token/Cookie/Session |
-| **D4: 敏感暴露** | 敏感信息泄露 | 密码/密钥/个人数据/配置 |
-| **D5: 操作影响** | 未授权操作 | 增/删/改/查权限 |
-| **D6: 业务上下文** | 端点功能分类 | 登录/用户/订单/管理 |
+### 0.1 环境检查
 
----
+```bash
+# 检查 Python 环境
+python3 --version
 
-## D1: 状态码判断
+# 检查 pip 是否可用
+pip3 --version
+```
 
-### 状态码分析表
+### 0.2 依赖检查与安装 (强制性)
 
-| 状态码 | 含义 | 判断逻辑 |
+```bash
+# 检查 requests
+python3 -c "import requests; print('requests:', requests.__version__)"
+
+# 如果未安装，执行安装
+pip3 install requests
+
+# 检查 playwright
+python3 -c "import playwright; print('playwright: OK')"
+
+# 如果未安装，执行安装
+pip3 install playwright
+playwright install chromium
+
+# 检查 pyppeteer (browser_tester 需要)
+python3 -c "import pyppeteer; print('pyppeteer: OK')"
+
+# 如果未安装，执行安装  
+pip3 install pyppeteer
+
+# 检查 pytest
+python3 -c "import pytest; print('pytest: OK')"
+
+# 如果未安装
+pip3 install pytest
+
+# 检查所有 core 模块是否可导入
+cd /workspace/API-Security-Testing-Optimized
+python3 -c "
+import sys
+sys.path.insert(0, '.')
+from core import browser_tester, deep_api_tester_v55, api_fuzzer, advanced_recon
+print('All core modules: OK')
+"
+```
+
+### 0.3 能力验证
+
+```bash
+# 验证 browser_tester 能力
+python3 -c "
+from core.browser_tester import BrowserAutomationTester, BrowserEngine, BrowserTestConfig
+config = BrowserTestConfig(target_url='http://example.com', engine=BrowserEngine.PUPPETEER)
+tester = BrowserAutomationTester(config)
+if tester.engine.value == 'none':
+    print('[WARN] browser_tester: 浏览器引擎不可用')
+    print('[FORCE] 尝试安装 playwright...')
+    import subprocess
+    subprocess.run(['pip3', 'install', 'playwright'], capture_output=True)
+    subprocess.run(['playwright', 'install', 'chromium'], capture_output=True)
+else:
+    print('[OK] browser_tester: 引擎可用')
+"
+
+# 验证 deep_api_tester 能力
+python3 -c "
+from core.deep_api_tester_v55 import DeepAPITesterV55
+tester = DeepAPITesterV55(target='http://example.com')
+print('[OK] deep_api_tester_v55: 可用')
+"
+
+# 验证 api_fuzzer 能力
+python3 -c "
+import requests
+from core.api_fuzzer import APIfuzzer
+fuzzer = APIfuzzer(session=requests.Session())
+print('[OK] api_fuzzer: 可用')
+"
+```
+
+### 0.4 检查结果处理
+
+| 检查项 | 状态 | 处理方式 |
 |--------|------|---------|
-| **200** | 成功 | 需要进一步检查响应内容 |
-| **401** | 未认证 | 检查是否应该需要认证 |
-| **403** | 未授权 | 认证了但没权限 vs 正确拒绝 |
-| **404** | 未找到 | 端点不存在 vs 正确隐藏 |
-| **500** | 服务器错误 | 可能泄露内部信息 |
-| **302/301** | 重定向 | 检查重定向目标是否可信 |
+| requests | 不可用 | **强制安装** `pip install requests` |
+| playwright | 不可用 | **强制安装** `pip install playwright && playwright install chromium` |
+| pyppeteer | 不可用 | **强制安装** `pip install pyppeteer` |
+| browser_tester | 引擎不可用 | **强制安装** playwright 及其浏览器 |
+| deep_api_tester | 不可导入 | 检查 core/ 目录，报告错误 |
+| api_fuzzer | 不可导入 | 检查 core/ 目录，报告错误 |
 
-### 状态码组合判断
+**强制规则**: 任何核心模块不可用，都必须先解决，不得跳过使用该模块的能力。
 
+---
+
+## 阶段 1: 目标探测与资产发现
+
+**触发**: 前置检查完成后自动执行
+
+### 1.1 基础探测
+
+```bash
+# HTTP 头探测
+curl -s -I http://target/
+
+# 服务器指纹
+curl -s http://target/ | grep -iE "(server:|nginx|apache|tomcat)"
+
+# 技术栈识别
+curl -s http://target/ | grep -iE "(vue|react|angular|jquery|elementui)"
 ```
-状态码 = 200 + 响应有数据 → 可能是未授权访问 (需验证)
-状态码 = 401 + 响应有提示 → 可能是信息枚举 (如"用户不存在")
-状态码 = 403 + 响应过快 → 可能是正确拒绝
-状态码 = 200 + 响应空 → 可能是隐藏端点 (需进一步探测)
+
+### 1.2 启用 browser_tester 分析 SPA
+
+**强制执行**: 如果目标是 SPA (Vue/React/Angular)，必须使用 browser_tester
+
+```python
+# -*- coding: utf-8 -*-
+import sys
+sys.path.insert(0, '/workspace/API-Security-Testing-Optimized')
+
+from core.browser_tester import BrowserAutomationTester, BrowserEngine, BrowserTestConfig
+
+def analyze_spa(target_url):
+    """使用浏览器分析 SPA"""
+    print(f"[browser_tester] 初始化浏览器，目标: {target_url}")
+    
+    config = BrowserTestConfig(
+        target_url=target_url,
+        engine=BrowserEngine.PUPPETEER,
+        headless=True,
+        timeout=30000
+    )
+    
+    tester = BrowserAutomationTester(config)
+    
+    if tester.engine.value == "none":
+        # 强制安装
+        print("[browser_tester] 引擎不可用，强制安装...")
+        import subprocess
+        subprocess.run(['pip3', 'install', 'playwright', 'pyppeteer'], capture_output=True)
+        subprocess.run(['playwright', 'install', 'chromium'], capture_output=True)
+        # 重新初始化
+        tester = BrowserAutomationTester(config)
+        
+        if tester.engine.value == "none":
+            raise Exception("[browser_tester] 安装后仍然不可用")
+    
+    print(f"[browser_tester] 引擎状态: {tester.engine.value}")
+    
+    # 执行分析
+    print("[browser_tester] 开始 JS 分析...")
+    
+    # 获取发现的端点
+    if hasattr(tester, 'extract_endpoints'):
+        endpoints = tester.extract_endpoints()
+        print(f"[browser_tester] 发现端点: {len(endpoints)}")
+    
+    # 测试 CORS
+    if hasattr(tester, 'test_cors'):
+        cors_result = tester.test_cors(target_url)
+        print(f"[browser_tester] CORS 测试: {cors_result}")
+    
+    return tester
+
+# 执行
+analyze_spa('http://58.215.18.57:91')
+```
+
+### 1.3 启用 deep_api_tester 发现端点
+
+**强制执行**: 必须调用 deep_api_tester 进行端点发现
+
+```python
+# -*- coding: utf-8 -*-
+import sys
+sys.path.insert(0, '/workspace/API-Security-Testing-Optimized')
+
+from core.deep_api_tester_v55 import DeepAPITesterV55
+
+def api_discovery(target_url):
+    """使用 API 测试器发现端点"""
+    print(f"[deep_api_tester] 初始化，目标: {target_url}")
+    
+    tester = DeepAPITesterV55(target=target_url, headless=True)
+    
+    print("[deep_api_tester] 执行端点发现和漏洞扫描...")
+    result = tester.run_test()
+    
+    print(f"[deep_api_tester] 扫描完成")
+    print(f"[deep_api_tester] 报告已保存")
+    
+    return tester
+
+# 执行
+api_discovery('http://58.215.18.57:91')
 ```
 
 ---
 
-## D2: 响应内容判断
+## 阶段 2: 多维度漏洞分析
 
-### 响应类型分类
+**触发**: 阶段 1 发现端点后执行
 
-| 类型 | 特征 | 风险等级 |
+### 2.1 启用 api_fuzzer 进行深度测试
+
+**强制执行**: 发现端点后必须使用 api_fuzzer 验证漏洞
+
+```python
+# -*- coding: utf-8 -*-
+import sys
+sys.path.insert(0, '/workspace/API-Security-Testing-Optimized')
+
+import requests
+from core.api_fuzzer import APIfuzzer
+
+def vulnerability_testing(api_base):
+    """使用 Fuzzer 进行漏洞测试"""
+    print(f"[api_fuzzer] 初始化，目标: {api_base}")
+    
+    session = requests.Session()
+    fuzzer = APIfuzzer(session=session)
+    
+    # 设置目标
+    if hasattr(fuzzer, 'set_target'):
+        fuzzer.set_target(api_base)
+    
+    print("[api_fuzzer] 执行漏洞测试...")
+    
+    # SQL 注入测试
+    if hasattr(fuzzer, 'fuzz_sqli'):
+        sqli_result = fuzzer.fuzz_sqli()
+        print(f"[api_fuzzer] SQL注入测试: {sqli_result}")
+    
+    # XSS 测试
+    if hasattr(fuzzer, 'fuzz_xss'):
+        xss_result = fuzzer.fuzz_xss()
+        print(f"[api_fuzzer] XSS 测试: {xss_result}")
+    
+    # 路径遍历测试
+    if hasattr(fuzzer, 'fuzz_path_traversal'):
+        pt_result = fuzzer.fuzz_path_traversal()
+        print(f"[api_fuzzer] 路径遍历测试: {pt_result}")
+    
+    return fuzzer
+
+# 执行
+vulnerability_testing('http://58.215.18.57:91/icp-api')
+```
+
+### 2.2 多维度判断框架
+
+#### 判断维度
+
+| 维度 | 权重 | 判断依据 |
 |------|------|---------|
-| **业务数据** | 包含用户/订单/配置等结构化数据 | 高 |
-| **认证令牌** | 包含 Token/JWT/Session | 高 |
-| **错误详情** | 包含堆栈/路径/数据库信息 | 高 |
-| **空响应** | 200 但无实质内容 | 中 |
-| **重定向** | 跳转到其他页面 | 中 |
-| **静态资源** | HTML/CSS/JS/图片 | 低 |
+| D1: 状态码 | 15% | 200/401/403/404/500 |
+| D2: 响应内容 | 20% | 敏感字段、业务数据、错误信息 |
+| D3: 认证绕过 | 25% | Token/Cookie/Session 验证 |
+| D4: 敏感暴露 | 20% | 密码/密钥/个人数据/配置 |
+| D5: 操作影响 | 15% | 增/删/改/查 权限 |
+| D6: 业务上下文 | 5% | 端点功能分类 |
 
-### 敏感字段检测
-
-```python
-# 敏感字段模式
-SENSITIVE_PATTERNS = {
-    # 认证相关
-    'password', 'passwd', 'pwd', 'secret', 'token', 'jwt', 
-    'session', 'cookie', 'auth',
-    
-    # 用户信息
-    'email', 'phone', 'mobile', 'id_card', '身份证',
-    'address', 'birthday', 'ssn',
-    
-    # 金融相关
-    'bank', 'card', 'credit', 'account', 'balance', 'salary',
-    
-    # 配置相关
-    'config', 'secret', 'key', 'api_key', 'private',
-    'database', 'db_', 'connection',
-    
-    # 内部信息
-    'internal', 'admin', 'root', 'path', 'filepath',
-    'stack', 'trace', 'error', 'exception'
-}
-```
-
-### 响应内容分析流程
-
-```
-响应状态码 = 200?
-    │
-    ├── 是 → 解析响应内容
-    │         │
-    │         ├── 包含敏感字段? → 高风险
-    │         ├── 包含业务数据? → 中高风险
-    │         ├── 错误详情? → 高风险
-    │         └── 空/无意义 → 低风险
-    │
-    └── 否 → 检查其他维度
-```
-
----
-
-## D3: 认证绕过检测
-
-### 认证要求矩阵
-
-| 端点类型 | 期望认证 | 无认证时的风险 |
-|---------|---------|---------------|
-| `/user/*` | 必须 | 高 - 隐私泄露 |
-| `/order/*` | 必须 | 高 - 交易风险 |
-| `/admin/*` | 必须 | 高 - 权限提升 |
-| `/login/*` | 不需要 | 低 - 正常公开 |
-| `/captcha/*` | 不需要 | 低 - 正常公开 |
-| `/public/*` | 不需要 | 低 - 设计公开 |
-| `/health/*` | 不需要 | 低 - 监控端点 |
-
-### 认证绕过测试方法
-
-```bash
-# 测试 1: 无认证访问
-curl -s http://target/api/user/info
-
-# 测试 2: 空 Token
-curl -s http://target/api/user/info -H "Authorization: "
-
-# 测试 3: 伪造 Token
-curl -s http://target/api/user/info -H "Authorization: Bearer fake_token"
-
-# 测试 4: 过期 Token
-curl -s http://target/api/user/info -H "Authorization: Bearer expired_token"
-
-# 测试 5: 其他用户 Token
-curl -s http://target/api/user/info -H "Authorization: Bearer other_user_token"
-```
-
-### 认证判断逻辑
-
-```
-访问需要认证的端点:
-    │
-    ├── 返回 200 + 他人数据 → IDOR (高危)
-    ├── 返回 200 + 自己数据 → 可能正常
-    ├── 返回 401/403 → 正确拒绝 (低风险)
-    └── 返回 200 + 空 → 可能配置错误 (中风险)
-```
-
----
-
-## D4: 敏感信息暴露
-
-### 敏感度分级
-
-| 等级 | 内容 | 示例 |
-|------|------|------|
-| **P0** | 认证凭据 | password, token, secret |
-| **P1** | 个人隐私 | email, phone, id_card, address |
-| **P2** | 金融数据 | bank_account, credit_card, balance |
-| **P3** | 业务数据 | order_id, business_info |
-| **P4** | 配置信息 | internal_path, version, stack_trace |
-
-### 敏感信息判断流程
-
-```
-发现响应内容?
-    │
-    ├── 包含 P0 字段 (password/token/secret)
-    │         └── → 严重漏洞 (Critical)
-    │
-    ├── 包含 P1 字段 (email/phone/id_card)
-    │         └── → 高危漏洞 (High)
-    │
-    ├── 包含 P2 字段 (bank/credit/balance)
-    │         └── → 高危漏洞 (High)
-    │
-    ├── 包含 P3 字段 (order/business)
-    │         └── → 中危漏洞 (Medium)
-    │
-    └── 包含 P4 字段 (path/version/error)
-              └── → 低危漏洞 (Low/Info)
-```
-
----
-
-## D5: 未授权操作检测
-
-### 操作类型风险矩阵
-
-| 操作 | HTTP 方法 | 风险 | 说明 |
-|------|----------|------|------|
-| 查询 | GET | 中 | 可能泄露数据 |
-| 创建 | POST | 高 | 未授权创建资源 |
-| 修改 | PUT/PATCH | 高 | 未授权修改数据 |
-| 删除 | DELETE | 高 | 未授权删除资源 |
-| 执行 | POST (action) | 高 | 未授权操作 |
-
-### 未授权操作测试
-
-```bash
-# 查询其他用户数据 (IDOR)
-curl -s http://target/api/user/1001
-curl -s http://target/api/user/1002
-
-# 未授权创建
-curl -s http://target/api/user -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"username":"hacker","role":"admin"}'
-
-# 未授权修改
-curl -s http://target/api/user/1001 -X PUT \
-  -H "Content-Type: application/json" \
-  -d '{"role":"admin"}'
-
-# 未授权删除
-curl -s http://target/api/user/1001 -X DELETE
-
-# 批量操作
-curl -s http://target/api/users/batch-delete -X POST \
-  -d '{"ids":[1,2,3,4,5]}'
-```
-
----
-
-## D6: 业务上下文分析
-
-### 端点业务分类
-
-```python
-ENDPOINT_CATEGORIES = {
-    # 认证类 - 通常公开
-    'auth': ['/login', '/captcha', '/register', '/oauth', '/sms'],
-    
-    # 用户管理 - 需要认证
-    'user': ['/user/', '/profile', '/password', '/avatar'],
-    
-    # 订单交易 - 需要认证
-    'order': ['/order/', '/pay', '/refund', '/invoice'],
-    
-    # 系统管理 - 需要高权限
-    'admin': ['/admin/', '/config', '/role', '/permission', '/system/'],
-    
-    # 数据操作 - 需要授权
-    'data': ['/file/', '/upload', '/download', '/export', '/import'],
-    
-    # 内部接口 - 不应暴露
-    'internal': ['/internal/', '/debug', '/actuator', '/swagger']
-}
-```
-
-### 上下文风险评分
-
-```python
-CONTEXT_RISK_SCORE = {
-    # 基础分数
-    'base': 5,
-    
-    # 认证缺失 (应该是需要认证的)
-    'no_auth_on_protected': +10,
-    
-    # 认证存在但可绕过
-    'auth_bypass': +15,
-    
-    # 包含敏感数据
-    'sensitive_data': +10,
-    
-    # 可未授权操作
-    'unauthorized_action': +15,
-    
-    # 内部端点暴露
-    'internal_exposed': +20,
-    
-    # 利用难度低
-    'easy_exploit': +5,
-}
-```
-
----
-
-## 多维度综合判断算法
-
-### 判断流程
-
-```
-步骤 1: 发送测试请求
-    ↓
-步骤 2: 收集响应
-    ├── HTTP 状态码
-    ├── 响应头 (CORS, Cookie, etc.)
-    ├── 响应体 (JSON/HTML/Error)
-    └── 响应时间
-    ↓
-步骤 3: D1 状态码分析
-    ├── 200? → 进入 D2
-    ├── 401/403? → 可能正常拒绝
-    └── 其他 → 标记异常
-    ↓
-步骤 4: D2 响应内容分析
-    ├── 业务数据? → D3 认证检查
-    ├── 敏感字段? → 提升风险等级
-    └── 空/错误 → D4 配置检查
-    ↓
-步骤 5: D3 认证绕过测试
-    ├── 应需认证但不需要? → 漏洞
-    └── 认证可被绕过? → 漏洞
-    ↓
-步骤 6: D4-D6 综合评分
-    ↓
-步骤 7: 输出判断结果
-```
-
-### 综合评分公式
+#### 综合评分算法
 
 ```
 RiskScore = (
@@ -364,111 +331,110 @@ RiskScore = (
 - Info: Score < 20
 ```
 
-### 各维度权重
-
-| 维度 | 权重 | 说明 |
-|------|------|------|
-| D3: 认证绕过 | 0.25 | 最重要，直接影响安全性 |
-| D2: 响应内容 | 0.20 | 数据是否敏感 |
-| D4: 敏感暴露 | 0.20 | 是否泄露敏感信息 |
-| D1: 状态码 | 0.15 | 基础判断 |
-| D5: 操作影响 | 0.15 | 是否可未授权操作 |
-| D6: 业务上下文 | 0.05 | 辅助判断 |
-
----
-
-## 漏洞判断标准
-
-### 判断为"漏洞"的条件
+#### 漏洞判定条件
 
 ```
-必须满足 (P0):
+必须满足 P0:
   □ D3: 该端点应该需要认证但不需要
   □ 或 D3: 认证可被绕过
 
-AND 满足以下至少一项 (P1):
+AND 满足以下至少一项 P1:
   □ D2: 响应包含敏感数据
   □ D4: 暴露内部配置/路径
   □ D5: 可进行未授权操作
 
-辅助条件 (P2):
+辅助条件 P2:
   □ D6: 业务上下文风险高
   □ 利用难度低
   □ 影响范围大
 ```
 
-### 判断为"误报"的条件
+---
+
+## 阶段 3: 验证与分类
+
+### 3.1 验证发现的漏洞
+
+```python
+def validate_vulnerability(endpoint, test_method):
+    """多维度验证漏洞"""
+    results = {
+        'D1_status': None,
+        'D2_content': None,
+        'D3_auth': None,
+        'D4_sensitive': None,
+        'D5_action': None,
+        'D6_context': None
+    }
+    
+    # D1: 状态码
+    response = test_method(endpoint)
+    results['D1_status'] = response.status_code
+    
+    # D2: 响应内容分析
+    if 'password' in response.text or 'token' in response.text:
+        results['D2_content'] = 'sensitive'
+    elif 'user' in response.text or 'email' in response.text:
+        results['D2_content'] = 'personal_data'
+    else:
+        results['D2_content'] = 'normal'
+    
+    # D3: 认证检查
+    if response.status_code == 200:
+        results['D3_auth'] = 'bypass'
+    elif response.status_code in [401, 403]:
+        results['D3_auth'] = 'protected'
+    
+    # D4: 敏感信息
+    sensitive_patterns = ['password', 'secret', 'key', 'token', 'api_key']
+    if any(p in response.text.lower() for p in sensitive_patterns):
+        results['D4_sensitive'] = 'exposed'
+    
+    return results
+```
+
+### 3.2 误报识别
 
 ```
-满足以下任一:
-  □ D1: 返回 401/403 (正确拒绝)
-  □ D2: 响应为空或无意义数据
-  □ D3: 端点明确标记为公开
-  □ D6: 业务上下文为公开信息
+以下情况判定为误报:
+- 返回 401/403 (正确拒绝)
+- 响应为空或无意义数据
+- 端点明确标记为公开 (如 /login, /captcha)
+- 业务上下文为公开信息 (如 /health, /version)
 ```
 
 ---
 
-## 实际测试命令参考
+## 阶段 4: 报告生成
 
-### 完整测试流程
-
-```bash
-# 1. 探测端点
-curl -s -I http://target/api/endpoint
-
-# 2. 无认证访问
-curl -s http://target/api/endpoint
-
-# 3. 带空 Token
-curl -s http://target/api/endpoint -H "Authorization: Bearer "
-
-# 4. 带伪造 Token
-curl -s http://target/api/endpoint -H "Authorization: Bearer fake"
-
-# 5. 检查响应内容
-# - 是否包含敏感字段
-# - 是否有其他用户数据
-# - 是否暴露内部信息
-
-# 6. 尝试操作 (如果查询成功)
-curl -s http://target/api/endpoint -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"test":"data"}'
-```
-
-### CORS 漏洞多维判断
-
-```bash
-# 1. 检查 CORS 头
-curl -s -i http://target/api/ -H "Origin: http://evil.com" | \
-  grep -i "access-control"
-
-# 2. 判断条件
-#    Access-Control-Allow-Origin: * → 高风险
-#    Access-Control-Allow-Origin: http://evil.com + allow-credentials: true → 严重
-#    仅 allowedMethods: GET, POST → 中等
-```
-
----
-
-## 报告输出格式
+### 4.1 强制输出格式
 
 ```markdown
+## Scope
+- Target: [目标 URL]
+- Assessment Mode: [文档驱动/被动/主动]
+- Authorization: [授权范围]
+
+## Asset Summary
+- Base URLs: [发现的所有 base URL]
+- API Type: [REST/GraphQL/SPA+API]
+- Tech Stack: [识别的技术栈]
+- Discovered Endpoints: [端点数量]
+
+## Test Matrix
+| Category | Test Item | Priority | Status | Finding |
+
 ## Findings
 
 ### Finding N: [漏洞标题]
 
 **Severity**: [Critical/High/Medium/Low/Info]
-
 **Confidence**: [Confirmed/High/Medium/Low/Hypothesis]
 
-**Affected Asset**: [端点]
-
 **Multi-Dimension Analysis**:
-| 维度 | 得分 | 说明 |
+| 维度 | 得分 | 分析 |
 |------|------|------|
-| D1 状态码 | X/20 | [分析] |
+| D1 状态码 | X/15 | [分析] |
 | D2 响应内容 | X/20 | [分析] |
 | D3 认证绕过 | X/25 | [分析] |
 | D4 敏感暴露 | X/20 | [分析] |
@@ -480,23 +446,117 @@ curl -s -i http://target/api/ -H "Origin: http://evil.com" | \
 ```http
 [请求]
 [响应头]
-[响应体 - 脱敏处理]
+[响应体 - 脱敏]
 ```
 
 **Root Cause**: [根本原因]
-
 **Impact**: [影响分析]
-
 **Remediation**: [修复建议]
+
+## Coverage Gaps
+## Overall Risk Summary
 ```
 
 ---
 
-## 工具选择
+## 工具调用规则 (强制执行)
 
-| 场景 | 工具 | 说明 |
+| 场景 | 工具 | 规则 |
 |------|------|------|
-| SPA 分析 | browser_tester.py | 动态 JS 分析 |
-| API 测试 | deep_api_tester.py | 端点发现 + 多维检测 |
-| 模糊测试 | api_fuzzer.py | SQL/XSS/注入 |
-| 推理分析 | reasoning_engine.py | 综合判断 |
+| SPA 分析 | browser_tester | **必须使用**，除非明确不可用 |
+| 端点发现 | deep_api_tester | **必须使用** |
+| 漏洞验证 | api_fuzzer | **必须使用** |
+| JS 分析 | V35JSAnalyzer | deep_api_tester 内部调用 |
+
+### 调用示例
+
+```python
+# 正确的调用方式
+from core.browser_tester import BrowserAutomationTester, BrowserEngine, BrowserTestConfig
+from core.deep_api_tester_v55 import DeepAPITesterV55
+from core.api_fuzzer import APIfuzzer
+
+# 1. browser_tester (如果目标是 SPA)
+config = BrowserTestConfig(target_url=target, engine=BrowserEngine.PUPPETEER)
+browser = BrowserAutomationTester(config)
+# ... 执行分析 ...
+
+# 2. deep_api_tester (必须调用)
+api_tester = DeepAPITesterV55(target=target, headless=True)
+api_tester.run_test()
+
+# 3. api_fuzzer (必须调用)
+import requests
+session = requests.Session()
+fuzzer = APIfuzzer(session=session)
+fuzzer.set_target(api_base)
+# ... 执行测试 ...
+```
+
+---
+
+## 快速执行命令
+
+```bash
+cd /workspace/API-Security-Testing-Optimized
+
+# 方式 1: 完整执行 (推荐)
+python3 << 'EOF'
+import sys
+sys.path.insert(0, '.')
+
+# 前置检查
+print("="*60)
+print("阶段 0: 前置检查")
+print("="*60)
+
+# 检查并安装依赖
+import subprocess
+import importlib
+
+def check_and_install(package, import_name=None):
+    name = import_name or package
+    try:
+        mod = importlib.import_module(name)
+        print(f"[OK] {package}")
+        return True
+    except:
+        print(f"[INSTALL] {package}...")
+        subprocess.run([sys.executable, '-m', 'pip', 'install', package], capture_output=True)
+        return False
+
+check_and_install('requests')
+check_and_install('playwright')
+check_and_install('pyppeteer')
+check_and_install('pytest')
+
+# 导入 core 模块
+from core.browser_tester import BrowserAutomationTester, BrowserEngine, BrowserTestConfig
+from core.deep_api_tester_v55 import DeepAPITesterV55
+from core.api_fuzzer import APIfuzzer
+
+print("\n" + "="*60)
+print("阶段 1: 资产发现")
+print("="*60)
+
+target = 'http://58.215.18.57:91'
+
+# 使用 deep_api_tester
+api_tester = DeepAPITesterV55(target=target, headless=True)
+api_tester.run_test()
+
+print("\n" + "="*60)
+print("阶段 2-3: 漏洞测试与验证")
+print("="*60)
+
+# 使用 api_fuzzer
+import requests
+session = requests.Session()
+fuzzer = APIfuzzer(session=session)
+fuzzer.set_target(target + '/icp-api')
+
+print("\n" + "="*60)
+print("完成")
+print("="*60)
+EOF
+```
