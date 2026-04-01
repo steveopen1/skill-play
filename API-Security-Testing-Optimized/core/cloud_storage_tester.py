@@ -978,6 +978,183 @@ class CloudStorageTester:
         print(f"[CloudStorage] 测试完成，发现 {len(results)} 个问题")
         return results, storage_type
     
+    def test_log_transfer_exposure(self, bucket_url: str, storage_type: str = None) -> Tuple[bool, List[str]]:
+        """
+        测试日志转存泄露 (OSS_scanner v1.1 新增)
+        检测日志是否被转存到存储桶
+        """
+        found = []
+        log_transfer_paths = [
+            '/logs transfer/', '/logs_archive/',
+            '/archived_logs/', '/logs_old/',
+            '/old_logs/', '/bak_logs/',
+            '/s3_logs/', '/oss_logs/',
+            '/bucket-logs/', '/access_logs/',
+            '/year=', '/month=', '/date=',
+            '/logs/date=', '/logs/dt=',
+        ]
+        
+        for path in log_transfer_paths:
+            try:
+                resp = self.session.get(bucket_url.rstrip('/') + path, timeout=10)
+                if resp.status_code == 200 and len(resp.content) > 100:
+                    found.append(f"{path} ({len(resp.content)} bytes)")
+            except:
+                pass
+        
+        return len(found) > 0, found
+    
+    def test_encryption_config(self, bucket_url: str, storage_type: str = None) -> Tuple[bool, List[str]]:
+        """
+        测试加密配置检测 (OSS_scanner v1.1 新增)
+        检测存储桶加密配置
+        """
+        found = []
+        encryption_paths = [
+            '?encryption', '?policy', '?acl',
+            '?tags', '?tagging', '?cors',
+            '/.encryption/', '/.policy/', '/.settings/',
+        ]
+        
+        for path in encryption_paths:
+            try:
+                resp = self.session.get(bucket_url.rstrip('/') + path, timeout=10)
+                if resp.status_code == 200:
+                    content = resp.text[:300].lower()
+                    if any(kw in content for kw in ['encryption', 'kms', 'aes256', 'base64', 'aws:kms']):
+                        found.append(f"{path} (包含加密配置)")
+                    elif len(resp.content) > 50:
+                        found.append(f"{path} ({len(resp.content)} bytes)")
+            except:
+                pass
+        
+        return len(found) > 0, found
+    
+    def batch_test(self, bucket_list: List[str], storage_type: str = None, 
+                   max_workers: int = 5, show_progress: bool = True) -> List[Dict]:
+        """
+        批量扫描多个存储桶 (多线程)
+        
+        Args:
+            bucket_list: 存储桶 URL 列表
+            storage_type: 存储类型 (可选)
+            max_workers: 最大并发数
+            show_progress: 是否显示进度
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        results = []
+        total = len(bucket_list)
+        
+        if show_progress:
+            print(f"[CloudStorage] 开始批量扫描 {total} 个存储桶 (并发数: {max_workers})")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_url = {
+                executor.submit(self.full_test, url, storage_type): url 
+                for url in bucket_list
+            }
+            
+            for future in as_completed(future_to_url):
+                url = future_to_url[future]
+                try:
+                    bucket_results, detected = future.result()
+                    if bucket_results:
+                        results.extend(bucket_results)
+                        if show_progress:
+                            print(f"[CloudStorage] [+] {url}: 发现 {len(bucket_results)} 个问题")
+                    else:
+                        if show_progress:
+                            print(f"[CloudStorage] [-] {url}: 无问题")
+                except Exception as e:
+                    if show_progress:
+                        print(f"[CloudStorage] [ERROR] {url}: {e}")
+        
+        if show_progress:
+            print(f"[CloudStorage] 批量扫描完成: {total} 个桶, {len(results)} 个问题")
+        
+        return results
+    
+    def parse_hostid_url(self, hostid_url: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """
+        解析 hostid-url，自动识别 bucket 和 region
+        
+        Returns:
+            (bucket_name, region, provider) 或 None
+        """
+        # 阿里云: http://bucket.oss-region.aliyuncs.com
+        aliyun_match = re.search(r'([a-zA-Z0-9-]+)\.oss-([a-zA-Z0-9-]+)\.aliyuncs\.com', hostid_url)
+        if aliyun_match:
+            return aliyun_match.group(1), aliyun_match.group(2), 'aliyun'
+        
+        # 腾讯云: http://bucket.cos.region.myqcloud.com
+        tencent_match = re.search(r'([a-zA-Z0-9-]+)\.cos\.([a-zA-Z0-9-]+)\.myqcloud\.com', hostid_url)
+        if tencent_match:
+            return tencent_match.group(1), tencent_match.group(2), 'tencent'
+        
+        # AWS: http://bucket.s3.region.amazonaws.com
+        aws_match = re.search(r'([a-zA-Z0-9-]+)\.s3\.([a-zA-Z0-9-]+)\.amazonaws\.com', hostid_url)
+        if aws_match:
+            return aws_match.group(1), aws_match.group(2), 'aws'
+        
+        # 华为云: http://bucket.obs.region.myhwclouds.com
+        huawei_match = re.search(r'([a-zA-Z0-9-]+)\.obs\.([a-zA-Z0-9-]+)\.myhwclouds\.com', hostid_url)
+        if huawei_match:
+            return huawei_match.group(1), huawei_match.group(2), 'huawei'
+        
+        return None, None, None
+    
+    def generate_report(self, results: List[Dict], output_format: str = 'text') -> str:
+        """
+        生成扫描报告
+        
+        Args:
+            results: 扫描结果
+            output_format: 报告格式 (text/json/html)
+        """
+        if output_format == 'json':
+            import json
+            return json.dumps(results, indent=2, ensure_ascii=False)
+        
+        elif output_format == 'html':
+            html = ['<html><head><meta charset="utf-8"><title>Cloud Storage Security Report</title>']
+            html.append('<style>body{font-family:Arial;margin:20px}h1{color:#333}</style></head><body>')
+            html.append('<h1>Cloud Storage Security Report</h1>')
+            html.append(f'<p>Total Findings: {len(results)}</p>')
+            
+            severity_groups = {}
+            for r in results:
+                sev = r.get('severity', 'Unknown')
+                if sev not in severity_groups:
+                    severity_groups[sev] = []
+                severity_groups[sev].append(r)
+            
+            for sev in ['Critical', 'High', 'Medium', 'Low']:
+                if sev in severity_groups:
+                    css_class = sev.lower()
+                    html.append(f'<h2 class="{css_class}">{sev} ({len(severity_groups[sev])})</h2>')
+                    html.append('<ul>')
+                    for r in severity_groups[sev]:
+                        html.append(f'<li><strong>{r.get("type")}</strong>: {r.get("evidence")}<br/>URL: {r.get("url")}<br/>Provider: {r.get("provider")}</li>')
+                    html.append('</ul>')
+            
+            html.append('</body></html>')
+            return '\n'.join(html)
+        
+        else:
+            lines = ['='*60, 'Cloud Storage Security Report', '='*60]
+            lines.append(f'Total Findings: {len(results)}')
+            lines.append('')
+            
+            for i, r in enumerate(results, 1):
+                lines.append(f"[{i}] {r.get('type')} ({r.get('severity')})")
+                lines.append(f"    Evidence: {r.get('evidence')}")
+                lines.append(f"    URL: {r.get('url')}")
+                lines.append(f"    Provider: {r.get('provider')}")
+                lines.append('')
+            
+            return '\n'.join(lines)
+    
     def discover_from_text(self, text: str) -> List[Dict]:
         """
         从文本 (JS/HTML/API 响应) 中发现存储桶 URL
