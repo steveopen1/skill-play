@@ -9,9 +9,11 @@ Intelligent API Discovery - Browser Collector
 注意：这是工具而非决策者，具体交互策略由 Agent Brain 控制
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
-from typing import List, Dict, Optional, Any, Callable, Set
+from typing import List, Dict, Optional, Any, Callable, Set, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
@@ -30,8 +32,8 @@ from ..models import (
 @dataclass
 class InterceptedRequest:
     """拦截的请求"""
-    request: Request
-    response: Optional[Response]
+    request: 'Request'
+    response: Optional['Response']
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -414,7 +416,7 @@ class BrowserCollector:
         """等待指定秒数"""
         await asyncio.sleep(seconds)
     
-    def get_network_requests(self) -> List[NetworkRequest]:
+    async def get_network_requests(self) -> List[NetworkRequest]:
         """
         获取捕获的网络请求
         
