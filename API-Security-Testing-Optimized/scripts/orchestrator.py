@@ -290,7 +290,8 @@ class EnhancedAgenticOrchestrator:
                     path=endpoint.get('path', ''),
                     method=endpoint.get('method', 'GET'),
                     source='collector',
-                    score=7
+                    score=7,
+                    is_high_value=True
                 )
                 self.context_manager.add_discovered_endpoint(ep)
             
@@ -300,9 +301,29 @@ class EnhancedAgenticOrchestrator:
                     path=fuzz_target,
                     method='GET',
                     source='fuzzer',
-                    score=5
+                    score=5,
+                    is_high_value=fuzz_target.startswith('/api/') or fuzz_target.startswith('/personnelWeb')
                 )
                 self.context_manager.add_discovered_endpoint(ep)
+            
+            # 添加主站和后端 API 基础路径作为 fuzzing 目标
+            if collected_data.backend_api_base:
+                self.context_manager.add_discovered_endpoint(Endpoint(
+                    path=collected_data.backend_api_base,
+                    method='GET',
+                    source='collector',
+                    score=8,
+                    is_high_value=True
+                ))
+            
+            # 添加主站根路径
+            self.context_manager.add_discovered_endpoint(Endpoint(
+                path='/',
+                method='GET',
+                source='collector',
+                score=6,
+                is_high_value=False
+            ))
             
             for insight in summary.get('insights', []):
                 self._emit('insight_generated', {
