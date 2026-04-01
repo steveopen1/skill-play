@@ -120,14 +120,66 @@ trigger:
 
 参考：`references/report-template.md`
 
+### 6. 测试循环迭代
+
+**当发现新的攻击面或需要深入验证时，循环执行以下步骤**：
+
+```
+循环条件：
+- 发现新的端点或参数 → 返回步骤 2
+- 发现新的认证机制 → 返回步骤 3
+- 需要验证假设 → 返回步骤 4
+- 发现新的风险类型 → 更新测试矩阵
+
+循环终止条件：
+- 所有发现已验证
+- 测试矩阵已完整覆盖
+- 用户确认完成评估
+```
+
+**循环流程**：
+```
+[步骤 2: 资产摘要] 
+       ↓
+[步骤 3: 测试矩阵] → 发现新资产 → 返回步骤 2
+       ↓
+[步骤 4: 漏洞验证] → 需要深入验证 → 返回步骤 4
+       ↓
+[步骤 5: 生成报告] → 发现新风险 → 更新矩阵 → 返回步骤 3
+       ↓
+    [循环结束]
+```
+
 ## 严重性校准
 
-| 级别 | 触发条件 |
-|------|----------|
-| Critical | 直接导致未授权访问 |
-| High | 可导致权限绕过 |
-| Medium | 信息泄露风险 |
-| Low | 配置问题 |
+**完整标准参考**：`references/severity-model.md`
+
+### 严重性级别
+
+| 级别 | 触发条件 | 示例 |
+|------|----------|------|
+| Critical | 直接导致未授权访问或数据泄露 | 认证绕过、SQL注入导致数据库泄露 |
+| High | 可导致权限提升或用户数据访问 | IDOR、垂直越权、API密钥泄露 |
+| Medium | 可导致有限影响或信息泄露 | 敏感信息暴露、账户枚举 |
+| Low | 影响有限的信息披露或配置问题 | 调试头暴露、版本信息泄露 |
+| Informational | 非安全问题，最佳实践建议 | 文档改进建议 |
+
+### 置信度级别
+
+| 级别 | 标准 | 要求证据 |
+|------|------|----------|
+| Confirmed | 完全验证，有 PoC | 完整请求/响应 |
+| High | 强指标 | 请求+响应+影响分析 |
+| Medium | 中等指标 | 观察到的行为 |
+| Low | 弱指标 | 单一响应 |
+| Hypothesis | 理论推断 | 需要进一步调查 |
+
+### 校准原则
+
+1. **保守校准**：证据不确定时，倾向较低严重性
+2. **基于影响**：考虑真实世界影响
+3. **可利用性**：考虑利用难度和前提条件
+4. **业务上下文**：考虑受影响资产的价值
 
 ## 协议处理
 
@@ -151,8 +203,49 @@ trigger:
 
 ## 输出格式
 
-**始终使用标准化报告格式**：
-- 简洁的资产摘要
-- 优先化测试矩阵
-- 结构化发现列表
-- 清晰的修复建议
+**完整模板参考**：`references/report-template.md`
+
+### 必须包含的章节
+
+```markdown
+## Scope
+- Target: [目标 URL]
+- Assessment Mode: [文档驱动/被动/主动]
+- Authorization: [授权范围]
+
+## Asset Summary
+- Base URLs:
+- API Type: [REST/GraphQL/混合]
+- Auth Schemes: [认证方式]
+- Discovered Endpoints: [端点列表]
+- Sensitive Objects: [敏感对象]
+- Trust Boundaries: [信任边界]
+
+## Test Matrix
+| Category | Test Item | Priority | Status |
+
+## Findings
+### Finding N: [标题]
+**Severity**: [Critical/High/Medium/Low/Informational]
+**Confidence**: [Confirmed/High/Medium/Low/Hypothesis]
+**Affected Asset**: [endpoint]
+**Description**: [问题描述]
+**Evidence**: [请求/响应样本]
+**Reproduction**: [复现步骤]
+**Impact**: [影响评估]
+**Remediation**: [修复建议]
+
+## Coverage Gaps
+| Gap | Impact | Recommendation |
+
+## Overall Risk Summary
+| Risk Level | Count | Findings |
+|------------|-------|----------|
+```
+
+### 报告质量要求
+
+- **Evidence**：必须包含请求/响应样本
+- **Reproduction**：清晰的复现步骤
+- **Remediation**：具体可操作的修复建议
+- **Coverage Gaps**：明确说明未覆盖区域及原因
