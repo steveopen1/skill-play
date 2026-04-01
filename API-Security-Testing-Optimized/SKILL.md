@@ -15,10 +15,18 @@ trigger:
     - "安全报告"
     - "全流程测试"
     - "完整测试"
+    - "云存储安全"
+    - "OSS 检测"
+    - "bucket 检测"
+    - "存储桶检测"
+    - "S3 检测"
+    - "阿里云安全"
+    - "腾讯云安全"
   patterns:
-    - "(?:帮我)?(?:进行?|做)(?:api|接口|安全)?(?:测试|检测|扫描)"
-    - "(?:帮我)?(?:检查?|发现?)(?:api|安全)?(?:漏洞|问题)"
-    - "(?:生成|输出)(?:安全)?报告"
+    - "(?:帮我)?(?:进行?|做)(?:api|接口|安全|云存储|oss)?(?:测试|检测|扫描)"
+    - "(?:帮我)?(?:检查?|发现?)(?:api|安全|oss|云存储|bucket)?(?:漏洞|问题)"
+    - "(?:生成|输出)(?:安全|云存储)?报告"
+    - "(?:scan|test)(?:oss|bucket|s3|cloud storage)"
   auto_trigger: true
 ---
 
@@ -495,6 +503,443 @@ fuzzer.set_target(api_base)
 
 ---
 
+## 阶段 5: 云存储安全检测 (强制执行)
+
+**触发**: 发现 OSS/云存储相关端点时执行
+
+### 5.1 云存储识别
+
+**识别依据**: 从 JS/API 响应中发现以下特征
+
+```python
+CLOUD_STORAGE_PATTERNS = {
+    # URL 模式
+    'aliyun': [
+        '.oss-', '.aliyuncs.com', 'aliyun', 'oss-cn-',
+        'x-oss-', 'oss.amazonaws.com'
+    ],
+    'tencent': [
+        '.cos.', '.myqcloud.com', 'cos.', 'cos-cn-',
+        'tencent', 'gzgrid'
+    ],
+    'huawei': [
+        '.obs.', '.myhwclouds.com', 'hw OBS', 'obs-cn-'
+    ],
+    'aws': [
+        '.s3.', 'amazonaws.com', 'aws-s3', 's3.amazonaws.com',
+        's3-external-', 's3.dualstack.'
+    ],
+    'minio': [
+        'minio', ':9000', ':9001', 'play.minio'
+    ],
+    'azure': [
+        '.blob.core.', 'windows.net', 'azure'
+    ],
+    
+    # 端点模式
+    'endpoint_patterns': [
+        '/oss/', '/bucket/', '/cos/', '/obs/',
+        '/file/', '/upload/', '/storage/',
+        '/minio/', '/blob/', '/s3/'
+    ],
+    
+    # 响应特征
+    'response_patterns': [
+        '<ListBucketResult', '<ListAllMyBucketsResult',
+        '<?xml version', 'ListBucketResponse',
+        'X-OSS-', 'X-Amz-', 'x-oss-metadata'
+    ]
+}
+```
+
+### 5.2 云存储漏洞检测矩阵
+
+| 漏洞类型 | 风险等级 | 检测方法 |
+|---------|---------|---------|
+| 公开可列目录 | Critical | GET / → 检查是否返回文件列表 |
+| 匿名 PUT 上传 | Critical | PUT /test.txt → 检查是否可上传 |
+| 匿名 POST 上传 | Critical | POST / → 检查表单上传 |
+| 匿名 DELETE | Critical | DELETE /test.txt → 检查删除权限 |
+| 敏感文件泄露 | Critical | 扫描 .env, .sql, .bak, .pem 等 |
+| 目录遍历 | High | GET /../../etc/passwd |
+| CORS 配置过宽 | High | 检查 Access-Control-Allow-Origin |
+| 访问日志泄露 | Medium | GET /logs/, /accesslog/ |
+| 版本控制泄露 | Medium | 检测 .versioned, /?versions |
+| 敏感 HTTP 头 | Low | 检查 X-OSS-Meta-*, X-Amz-* |
+
+### 5.3 云存储检测执行
+
+```python
+# -*- coding: utf-8 -*-
+"""
+云存储安全检测模块
+支持: 阿里云 OSS, 腾讯云 COS, 华为云 OBS, AWS S3, MinIO
+参考: OSS_scanner (bitboy-sys), BucketTool (libaibaia)
+"""
+
+import requests
+import xml.etree.ElementTree as ET
+from typing import Dict, List, Optional, Tuple
+
+class CloudStorageTester:
+    """云存储安全测试器"""
+    
+    # 云厂商 URL 模板
+    CLOUD_TEMPLATES = {
+        'aliyun': {
+            'url': 'http://{bucket}.oss-{region}.aliyuncs.com',
+            'https': 'https://{bucket}.oss-{region}.aliyuncs.com'
+        },
+        'tencent': {
+            'url': 'http://{bucket}.cos.{region}.myqcloud.com',
+            'https': 'https://{bucket}.cos.{region}.myqcloud.com'
+        },
+        'huawei': {
+            'url': 'http://{bucket}.obs.{region}.myhwclouds.com',
+            'https': 'https://{bucket}.obs.{region}.myhwclouds.com'
+        },
+        'aws': {
+            'url': 'http://{bucket}.s3.{region}.amazonaws.com',
+            'https': 'https://{bucket}.s3.{region}.amazonaws.com'
+        }
+    }
+    
+    # 敏感文件路径
+    SENSITIVE_PATHS = [
+        '.env', '.git/config', '.git/HEAD', 'id_rsa', 'id_rsa.pub',
+        'access_key', 'secret_key', 'credentials', 'aws_key',
+        '.sql', '.bak', '.backup', '.db', '.dump',
+        '.pem', '.key', '.crt', '.p12', '.pfx',
+        'wp-config.php', 'config.php', 'settings.py',
+        'database.yml', 'credentials.json',
+        'backup.sql', 'db_backup', 'data.sql'
+    ]
+    
+    # 日志路径
+    LOG_PATHS = [
+        '/logs/', '/log/', '/accesslog/', '/access_log/',
+        '/error_log/', '/debug.log', '/app.log'
+    ]
+    
+    def __init__(self, session: requests.Session = None):
+        self.session = session or requests.Session()
+        self.findings: List[Dict] = []
+    
+    def detect_cloud_provider(self, url: str) -> Optional[str]:
+        """检测云厂商类型"""
+        for provider, patterns in self.CLOUD_STORAGE_PATTERNS.items():
+            if provider == 'endpoint_patterns' or provider == 'response_patterns':
+                continue
+            for pattern in patterns:
+                if pattern in url.lower():
+                    return provider
+        return None
+    
+    def test_public_listing(self, bucket_url: str) -> Tuple[bool, str]:
+        """测试公开可列目录"""
+        try:
+            resp = self.session.get(bucket_url, timeout=10)
+            
+            # 检查是否返回 XML 文件列表
+            if resp.status_code == 200:
+                content = resp.text
+                for pattern in ['<ListBucketResult', '<ListAllMyBucketsResult', 
+                               'ListBucketResponse', '<?xml version']:
+                    if pattern in content:
+                        return True, f"公开可列目录 - 找到文件列表 ({len(content)} bytes)"
+            
+            # 检查是否返回 AccessDenied
+            if 'AccessDenied' in resp.text or resp.status_code == 403:
+                return False, "正确拒绝 (403)"
+                
+            return False, f"状态码: {resp.status_code}"
+            
+        except Exception as e:
+            return False, f"请求失败: {e}"
+    
+    def test_anonymous_put(self, bucket_url: str) -> Tuple[bool, str]:
+        """测试匿名 PUT 上传"""
+        test_content = f"OSS_TEST_{requests.utils.time.time()}"
+        test_key = f"test_{requests.utils.time.time()}.txt"
+        
+        try:
+            resp = self.session.put(
+                f"{bucket_url}/{test_key}",
+                data=test_content,
+                timeout=10
+            )
+            
+            if resp.status_code in [200, 201]:
+                # 尝试删除测试文件
+                self.session.delete(f"{bucket_url}/{test_key}")
+                return True, f"可匿名上传 (状态码: {resp.status_code})"
+            
+            return False, f"PUT 上传失败 (状态码: {resp.status_code})"
+            
+        except Exception as e:
+            return False, f"请求失败: {e}"
+    
+    def test_anonymous_post(self, bucket_url: str) -> Tuple[bool, str]:
+        """测试匿名 POST 表单上传"""
+        test_content = f"OSS_TEST_{requests.utils.time.time()}"
+        
+        try:
+            files = {'file': ('test.txt', test_content, 'text/plain')}
+            resp = self.session.post(bucket_url, files=files, timeout=10)
+            
+            if resp.status_code in [200, 201]:
+                return True, f"可匿名 POST 上传 (状态码: {resp.status_code})"
+            
+            return False, f"POST 上传失败 (状态码: {resp.status_code})"
+            
+        except Exception as e:
+            return False, f"请求失败: {e}"
+    
+    def test_anonymous_delete(self, bucket_url: str) -> Tuple[bool, str]:
+        """测试匿名 DELETE 权限"""
+        # 先上传测试文件
+        test_key = f"test_del_{requests.utils.time.time()}.txt"
+        
+        try:
+            # 上传
+            self.session.put(
+                f"{bucket_url}/{test_key}",
+                data="test",
+                timeout=10
+            )
+            
+            # 尝试删除
+            resp = self.session.delete(f"{bucket_url}/{test_key}", timeout=10)
+            
+            if resp.status_code in [200, 204]:
+                return True, f"可匿名删除 (状态码: {resp.status_code})"
+            
+            return False, f"DELETE 失败 (状态码: {resp.status_code})"
+            
+        except Exception as e:
+            return False, f"请求失败: {e}"
+    
+    def test_sensitive_files(self, bucket_url: str) -> Tuple[bool, List[str]]:
+        """测试敏感文件泄露"""
+        found = []
+        
+        for path in self.SENSITIVE_PATHS:
+            try:
+                resp = self.session.get(f"{bucket_url}/{path}", timeout=10)
+                
+                if resp.status_code == 200 and len(resp.content) > 0:
+                    # 检查内容是否是敏感文件
+                    content = resp.text[:500].lower()
+                    if any(kw in content for kw in ['password', 'secret', 'key', 'aws', 'api_key', 'token']):
+                        found.append(f"{path} (可能包含敏感信息)")
+                    elif len(resp.content) > 100:  # 有实质内容
+                        found.append(f"{path} ({len(resp.content)} bytes)")
+                        
+            except:
+                pass
+        
+        return len(found) > 0, found
+    
+    def test_directory_traversal(self, bucket_url: str) -> Tuple[bool, str]:
+        """测试目录遍历"""
+        traversal_paths = [
+            '../../etc/passwd',
+            '..%2F..%2F..%2Fetc%2Fpasswd',
+            '....//....//etc/passwd'
+        ]
+        
+        for path in traversal_paths:
+            try:
+                resp = self.session.get(f"{bucket_url}/{path}", timeout=10)
+                
+                if resp.status_code == 200:
+                    if 'root:' in resp.text or 'Administrator' in resp.text:
+                        return True, f"目录遍历成功 - 读取了系统文件"
+                    elif len(resp.text) > 50:
+                        return True, f"可能存在目录遍历 (路径: {path})"
+                        
+            except:
+                pass
+        
+        return False, "未发现目录遍历"
+    
+    def test_cors_misconfiguration(self, bucket_url: str) -> Tuple[bool, str]:
+        """测试 CORS 配置过宽"""
+        try:
+            resp = self.session.options(
+                bucket_url,
+                headers={
+                    'Origin': 'http://evil.com',
+                    'Access-Control-Request-Method': 'PUT'
+                },
+                timeout=10
+            )
+            
+            allow_origin = resp.headers.get('Access-Control-Allow-Origin', '')
+            allow_methods = resp.headers.get('Access-Control-Allow-Methods', '')
+            
+            if allow_origin == '*' or 'http://evil.com' in allow_origin:
+                if 'PUT' in allow_methods or 'POST' in allow_methods:
+                    return True, f"CORS 过宽 - Allow-Origin: {allow_origin}, Methods: {allow_methods}"
+                return True, f"CORS 允许任意 Origin: {allow_origin}"
+            
+            return False, f"CORS 配置正常"
+            
+        except Exception as e:
+            return False, f"CORS 检测失败: {e}"
+    
+    def test_log_exposure(self, bucket_url: str) -> Tuple[bool, List[str]]:
+        """测试访问日志泄露"""
+        found = []
+        
+        for log_path in self.LOG_PATHS:
+            try:
+                resp = self.session.get(f"{bucket_url}/{log_path}", timeout=10)
+                
+                if resp.status_code == 200 and len(resp.content) > 100:
+                    found.append(f"{log_path} ({len(resp.content)} bytes)")
+                    
+            except:
+                pass
+        
+        return len(found) > 0, found
+    
+    def full_test(self, bucket_url: str) -> List[Dict]:
+        """执行完整云存储安全测试"""
+        print(f"[CloudStorage] 开始测试: {bucket_url}")
+        
+        provider = self.detect_cloud_provider(bucket_url)
+        print(f"[CloudStorage] 识别厂商: {provider or '未知'}")
+        
+        results = []
+        
+        # 1. 公开可列目录
+        print("[CloudStorage] 测试公开可列目录...")
+        is_public, msg = self.test_public_listing(bucket_url)
+        if is_public:
+            results.append({
+                'type': 'Public Listing',
+                'severity': 'Critical',
+                'evidence': msg,
+                'url': bucket_url
+            })
+        
+        # 2. 匿名 PUT
+        print("[CloudStorage] 测试匿名 PUT 上传...")
+        can_put, msg = self.test_anonymous_put(bucket_url)
+        if can_put:
+            results.append({
+                'type': 'Anonymous PUT Upload',
+                'severity': 'Critical',
+                'evidence': msg,
+                'url': bucket_url
+            })
+        
+        # 3. 敏感文件
+        print("[CloudStorage] 测试敏感文件泄露...")
+        has_sensitive, files = self.test_sensitive_files(bucket_url)
+        if has_sensitive:
+            results.append({
+                'type': 'Sensitive File Exposure',
+                'severity': 'Critical',
+                'evidence': ', '.join(files[:5]),
+                'url': bucket_url
+            })
+        
+        # 4. 目录遍历
+        print("[CloudStorage] 测试目录遍历...")
+        can_traverse, msg = self.test_directory_traversal(bucket_url)
+        if can_traverse:
+            results.append({
+                'type': 'Directory Traversal',
+                'severity': 'High',
+                'evidence': msg,
+                'url': bucket_url
+            })
+        
+        # 5. CORS
+        print("[CloudStorage] 测试 CORS...")
+        cors_vuln, msg = self.test_cors_misconfiguration(bucket_url)
+        if cors_vuln:
+            results.append({
+                'type': 'CORS Misconfiguration',
+                'severity': 'High',
+                'evidence': msg,
+                'url': bucket_url
+            })
+        
+        # 6. 日志泄露
+        print("[CloudStorage] 测试日志泄露...")
+        has_logs, log_files = self.test_log_exposure(bucket_url)
+        if has_logs:
+            results.append({
+                'type': 'Log Exposure',
+                'severity': 'Medium',
+                'evidence': ', '.join(log_files[:3]),
+                'url': bucket_url
+            })
+        
+        print(f"[CloudStorage] 测试完成，发现 {len(results)} 个问题")
+        return results
+
+
+def discover_and_test_cloud_storage(target: str) -> List[Dict]:
+    """发现并测试云存储"""
+    print(f"[CloudStorage] 开始云存储安全检测，目标: {target}")
+    
+    tester = CloudStorageTester()
+    all_findings = []
+    
+    # 从 JS 中发现的存储桶 URL
+    bucket_urls = [
+        # 需要从实际测试中收集
+    ]
+    
+    for url in bucket_urls:
+        findings = tester.full_test(url)
+        all_findings.extend(findings)
+    
+    return all_findings
+```
+
+### 5.4 云存储检测调用示例
+
+```python
+# -*- coding: utf-8 -*-
+import sys
+sys.path.insert(0, '/workspace/API-Security-Testing-Optimized')
+
+from core.cloud_storage_tester import CloudStorageTester
+
+def test_cloud_storage(target):
+    """测试云存储安全"""
+    tester = CloudStorageTester()
+    
+    # 测试已发现的存储桶
+    bucket_urls = [
+        'http://target.oss-cn-region.aliyuncs.com',
+        'http://target.cos.region.myqcloud.com',
+        # 添加更多...
+    ]
+    
+    all_results = []
+    
+    for bucket_url in bucket_urls:
+        print(f"\n测试: {bucket_url}")
+        results = tester.full_test(bucket_url)
+        all_results.extend(results)
+        
+        for r in results:
+            print(f"  [{r['severity']}] {r['type']}: {r['evidence']}")
+    
+    return all_results
+
+# 执行
+test_cloud_storage('http://58.215.18.57:91')
+```
+
+---
+
 ## 快速执行命令
 
 ```bash
@@ -554,6 +999,19 @@ import requests
 session = requests.Session()
 fuzzer = APIfuzzer(session=session)
 fuzzer.set_target(target + '/icp-api')
+
+print("\n" + "="*60)
+print("阶段 5: 云存储安全检测")
+print("="*60)
+
+# 云存储检测
+from core.cloud_storage_tester import CloudStorageTester
+cloud_tester = CloudStorageTester(session=session)
+
+# 发现存储桶 URL 并测试
+# cloud_urls = [...]  # 从 API 发现中收集
+# for url in cloud_urls:
+#     results = cloud_tester.full_test(url)
 
 print("\n" + "="*60)
 print("完成")
