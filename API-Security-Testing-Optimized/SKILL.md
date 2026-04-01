@@ -20,8 +20,11 @@ trigger:
     - "bucket 检测"
     - "存储桶检测"
     - "S3 检测"
-    - "阿里云安全"
-    - "腾讯云安全"
+  - "阿里云安全"
+  - "腾讯云安全"
+  - "GraphQL 安全"
+  - "websocket 安全"
+  - "graphql 检测"
   patterns:
     - "(?:帮我)?(?:进行?|做)(?:api|接口|安全|云存储|oss)?(?:测试|检测|扫描)"
     - "(?:帮我)?(?:检查?|发现?)(?:api|安全|oss|云存储|bucket)?(?:漏洞|问题)"
@@ -407,6 +410,160 @@ vulnerability_testing('http://58.215.18.57:91/icp-api')
 | D4: 敏感暴露 | 20% | 密码/密钥/个人数据/配置 |
 | D5: 操作影响 | 15% | 增/删/改/查 权限 |
 | D6: 业务上下文 | 5% | 端点功能分类 |
+
+### 2.3 发现 GraphQL? → 触发专项测试
+
+**触发条件**:
+
+| 特征 | 检测方法 |
+|------|---------|
+| URL 包含 `/graphql`, `/graphQL` | 路径匹配 |
+| 响应包含 `application/graphql` | Content-Type |
+| 响应包含 `"__schema"`, `"__type"` | GraphQL Introspection |
+| 响应包含 `{"data":` + GraphQL 结构 | JSON 结构 |
+
+**GraphQL 专项测试** (参考 `references/graphql-guidance.md`):
+
+```python
+GRAPHQL_TRIGGER_PATTERNS = {
+    'path': ['/graphql', '/graphQL', '/api/graphql'],
+    'content': ['__schema', '__type', 'application/graphql'],
+    'header': ['application/graphql']
+}
+
+def is_graphql_endpoint(endpoint, response) -> bool:
+    """判断是否为 GraphQL 端点"""
+    # 1. 路径匹配
+    for pattern in GRAPHQL_TRIGGER_PATTERNS['path']:
+        if pattern in endpoint.lower():
+            return True
+    
+    # 2. 响应 Content-Type
+    if response and 'application/graphql' in response.headers.get('Content-Type', ''):
+        return True
+    
+    # 3. 响应内容包含 GraphQL 结构
+    if response:
+        text = response.text
+        if '__schema' in text or '__type' in text:
+            return True
+        if '"data":' in text and '{' in text:
+            # 可能是 GraphQL JSON 响应
+            pass
+    
+    return False
+```
+
+### 2.4 发现 IDOR/越权? → 触发权限测试
+
+**触发条件**:
+
+| 特征 | 说明 |
+|------|------|
+| 端点包含 `/user/{id}`, `/order/{id}` | 资源 ID 参数 |
+| 响应包含其他用户数据 | 数据泄露 |
+| 修改请求可指定资源 ID | 权限检查 |
+
+```python
+IDOR_PATTERNS = {
+    'path': ['/user/', '/users/', '/order/', '/orders/', '/account/', '/profile/'],
+    'param': ['id=', 'userId=', 'orderId=', 'account_id='],
+}
+
+def check_idor_indicators(endpoint, response) -> bool:
+    """检查 IDOR 风险"""
+    # 1. 路径模式
+    for pattern in IDOR_PATTERNS['path']:
+        if pattern in endpoint:
+            return True
+    
+    # 2. 响应内容泄露其他用户数据
+    if response and response.status_code == 200:
+        # 检查是否包含其他用户信息
+        patterns = ['"id":', '"username":', '"email":', '"phone":']
+        if any(p in response.text for p in patterns):
+            return True
+    
+    return False
+```
+
+### 2.5 发现暴力破解风险? → 触发登录测试
+
+**触发条件**:
+
+| 特征 | 说明 |
+|------|------|
+| 端点包含 `/login`, `/auth`, `/signin` | 登录接口 |
+| `/register`, `/forgot-password` | 注册/密码重置 |
+| 无验证码或 rate limit | 防护缺失 |
+
+```python
+BRUTE_FORCE_PATTERNS = {
+    'path': ['/login', '/auth', '/signin', '/logon', '/register', '/forgot', '/reset'],
+    'keyword': ['password', 'username', 'captcha', 'verify']
+}
+
+def check_brute_force_risk(endpoint) -> bool:
+    """检查暴力破解风险"""
+    endpoint_lower = endpoint.lower()
+    
+    # 1. 登录相关端点
+    for pattern in BRUTE_FORCE_PATTERNS['path']:
+        if pattern in endpoint_lower:
+            return True
+    
+    # 2. 包含敏感参数
+    for pattern in BRUTE_FORCE_PATTERNS['keyword']:
+        if pattern in endpoint_lower:
+            return True
+    
+    return False
+```
+
+### 2.6 发现 WebSocket? → 触发 WS 测试
+
+**触发条件**:
+
+| 特征 | 检测方法 |
+|------|---------|
+| URL 包含 `/ws`, `/websocket` | 路径匹配 |
+| 响应头包含 `Upgrade: websocket` | HTTP 升级 |
+| 响应包含 `websocket` 关键字 | 内容匹配 |
+
+```python
+WEBSOCKET_PATTERNS = {
+    'path': ['/ws', '/websocket', '/ws/'],
+    'header': ['upgrade', 'websocket'],
+    'content': ['websocket', 'ws://', 'wss://']
+}
+
+def check_websocket_endpoint(endpoint, response) -> bool:
+    """判断是否需要 WebSocket 测试"""
+    # 1. 路径匹配
+    for pattern in WEBSOCKET_PATTERNS['path']:
+        if pattern in endpoint.lower():
+            return True
+    
+    # 2. 响应头
+    if response:
+        upgrade = response.headers.get('Upgrade', '').lower()
+        if 'websocket' in upgrade:
+            return True
+    
+    return False
+```
+
+### 2.7 阶段间循环
+
+```
+阶段 1: 资产发现
+    │
+    ├── 发现 /graphql → GraphQL 专项 → 阶段 2.3
+    ├── 发现 /ws → WebSocket 专项 → 阶段 2.6
+    ├── 发现 /login → 暴力破解测试 → 阶段 2.5
+    ├── 发现 /user/{id} → IDOR 测试 → 阶段 2.4
+    ├── 发现 /file/, /minio/ → 阶段 5 云存储
+    └── 其他 → 继续阶段 2.1
 
 #### 综合评分算法
 
@@ -1230,3 +1387,19 @@ print("完成")
 print("="*60)
 EOF
 ```
+
+---
+
+## 参考文档
+
+| 阶段 | 参考文档 | 说明 |
+|------|---------|------|
+| GraphQL 测试 | `references/graphql-guidance.md` | GraphQL 专项测试指导 |
+| REST API 测试 | `references/rest-guidance.md` | REST API 测试指导 |
+| 资产发现 | `references/asset-discovery.md` | 资产发现方法 |
+| 测试矩阵 | `references/test-matrix.md` | 测试用例矩阵 |
+| 验证标准 | `references/validation.md` | 漏洞验证标准 |
+| 严重性校准 | `references/severity-model.md` | 严重性分级标准 |
+| 报告模板 | `references/report-template.md` | 报告格式模板 |
+| 云存储 | `core/cloud_storage_tester.py` | 云存储安全测试模块 |
+
