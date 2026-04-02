@@ -326,7 +326,45 @@ else:
 
 | 异常 | 处理方式 |
 |-----|---------|
-| Playwright 不可用 | 使用静态解析作为主要方式 |
+| **Playwright 不可用** | 按以下顺序检测平替：<br>1. 检查其他无头浏览器 (pyppeteer、selenium)<br>2. 检查无头浏览器 MCP<br>3. 检查无头浏览器相关 Skill<br>4. 自动下载安装 Playwright 依赖<br>5. 直到 Playwright 可用 |
 | 动态分析超时 | 继续使用已捕获结果 |
 | API Hook 失败 | 使用静态端点 + 猜测参数 |
 | 云存储检测误报 | 检查 Content-Type + 响应格式 |
+
+---
+
+## 前置检查与依赖修复流程
+
+```
+[前置检查] playwright 不可用?
+    │
+    ├─ 检测平替方案
+    │   ├─ pyppeteer (异步无头浏览器)
+    │   ├─ selenium (多浏览器支持)
+    │   ├─ puppeteer (Node.js)
+    │   ├─ headless_browser MCP
+    │   └─ headless_browser skill
+    │
+    ├─ 尝试自动修复
+    │   ├─ playwright install-deps
+    │   ├─ playwright install chromium
+    │   └─ pip install playwright
+    │
+    └─ 若仍不可用
+        ├─ 记录警告
+        └─ 建议手动安装
+```
+
+---
+
+## 环境要求
+
+### 必需依赖
+- **requests**: HTTP 客户端
+- **playwright**: 无头浏览器 (必须)
+
+### 可选平替
+- **pyppeteer**: pyppeteer (异步版本)
+- **selenium**: 多浏览器自动化
+- **MCP**: headless_browser MCP
+- **Skill**: headless_browser skill

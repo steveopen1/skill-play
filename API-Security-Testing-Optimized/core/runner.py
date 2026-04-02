@@ -88,26 +88,17 @@ class PrerequisiteChecker:
     @staticmethod
     def check(ctx: TestContext) -> bool:
         """检查所有依赖，设置上下文"""
+        from core.prerequisite import prerequisite_check
+        
         print("[0] 前置检查")
         print("-" * 70)
         
-        # playwright
-        try:
-            from playwright.sync_api import sync_playwright
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                browser.close()
-            ctx.playwright_available = True
-            print("  [OK] playwright")
-        except Exception as e:
-            ctx.playwright_available = False
-            print(f"  [FAIL] playwright: {e}")
-            print("  [TRY] 尝试修复...")
-            if PrerequisiteChecker.fix_playwright():
-                ctx.playwright_available = True
-                print("  [OK] playwright 修复成功")
+        # 使用新的前置检查模块 (支持平替检测和自动安装)
+        playwright_available, browser_type, can_proceed = prerequisite_check()
         
-        # requests
+        ctx.playwright_available = playwright_available
+        
+        # requests 检查
         try:
             import requests
             ctx.session = requests.Session()
@@ -119,25 +110,12 @@ class PrerequisiteChecker:
             print("  [FAIL] requests")
             return False
         
+        if not can_proceed:
+            print("\n[FATAL] 前置检查失败 - 缺少无头浏览器支持")
+            return False
+        
         print()
         return ctx.playwright_available and ctx.session is not None
-    
-    @staticmethod
-    def fix_playwright():
-        """修复 playwright"""
-        import subprocess
-        try:
-            subprocess.run(['playwright', 'install-deps', 'chromium'], 
-                          capture_output=True, timeout=120)
-            subprocess.run(['playwright', 'install', 'chromium'], 
-                          capture_output=True, timeout=120)
-            from playwright.sync_api import sync_playwright
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                browser.close()
-            return True
-        except:
-            return False
 
 
 class AssetDiscovery:
