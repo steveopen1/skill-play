@@ -553,9 +553,11 @@ token泄露 → 用token访问敏感接口 → 越权操作
    - chunk-*.js (业务模块)
 ```
 
-**阶段3：JS深度分析（AST/正则提取）**
+**阶段3：JS深度分析（AST+正则双模式提取）**
 ```
-1. 提取baseURL配置（关键！）
+【关键】必须使用AST+正则双模式进行深度分析
+
+1. 提取baseURL配置（最优先！）
    patterns:
    - r'baseURL\s*[:=]\s*["\']([^"\']+)["\']'
    - r'axios\.create\s*\(\s*\{([^}]+)\}'
@@ -563,13 +565,26 @@ token泄露 → 用token访问敏感接口 → 越权操作
    重要发现：
    - baseURL:"" 为空 → 使用相对路径 + nginx代理
    - baseURL:"https://api.xxx.com" → 使用配置的域名前缀
+   - baseURL不存在 → 使用同源请求
 
-2. 提取API端点路径
+2. AST+正则双模式提取API端点
+   
+   正则模式（快速提取）:
    patterns:
    - r'["\'](/(?:user|auth|admin|login|logout|api|v\d|frame)[^"\']*)["\']'
    - r'axios\.[a-z]+\(["\']([^"\']+)["\']'
    - r'fetch\(["\']([^"\']+)["\']'
+   - r'\.get\(["\']([^"\']+)["\']'
+   - r'\.post\(["\']([^"\']+)["\']'
    
+   【重要】发现API后深入分析来源JS:
+   → 记录API所在的JS文件名
+   → 深度分析该JS文件（用curl下载）:
+      - 获取完整JS内容（可能有混淆，需多次提取）
+      - 提取所有API路径（不仅限正则匹配到的）
+      - 提取敏感信息（API密钥、硬编码凭证等）
+      - 提取URL模板（如 /user/${userId}/info）
+
 3. 提取环境变量配置
    patterns:
    - r'VUE_APP_\w+'
@@ -582,17 +597,37 @@ token泄露 → 用token访问敏感接口 → 越权操作
 
 **阶段4：API测试**
 ```
-1. 逐个测试发现的API端点
+1. 确定base_path（关键！找不到时使用字典）
+   
+   base_path获取优先级:
+   1. baseURL配置 → 直接使用
+   2. nginx反向代理推测 → 从响应头Server字段分析
+   3. 使用字典 fallback:
+   
+   # 常见API前缀/父路径字典
+   common_api_prefixes = [
+       "/api", "/api/v1", "/api/v2", "/api/v3",
+       "/webapi", "/openapi", "/rest", "/rest/api",
+       "/admin", "/manager", "/backend", "/server",
+       "/user", "/auth", "/oauth", "/public",
+   ]
+   
+2. 逐个测试发现的API端点
    - GET请求：检查Content-Type和响应内容
    - POST请求：测试登录接口（SQL注入/XSS）
    
-2. 判断响应类型
+3. 判断响应类型
    - application/json → 真实API
    - text/html → SPA路由或WAF拦截
    
-3. 记录认证要求
+4. 记录认证要求
    - 401/403 → 需要认证（正常）
    - 200 + JSON → 检查是否未授权
+
+【重要】发现Swagger/接口文档时:
+→ 立即访问获取更多API
+→ 解析Swagger JSON获取完整API列表
+→ 对获取的API立即进行漏洞测试
 ```
 
 **阶段5：漏洞验证（10维度）**
@@ -699,7 +734,8 @@ core/                              # 核心能力池（原子化）
 │   └── response_diff.py         # 响应差异对比
 └── utils/                        # 工具能力
     ├── prerequisite.py          # 依赖检查
-    └── payload_lib.py          # Payload库
+    ├── payload_lib.py           # Payload库
+    └── base_path_dict.py       # 【新增】API base path字典
 ```
 
 ### 能力池模块参考
@@ -719,9 +755,103 @@ core/                              # 核心能力池（原子化）
 | 测试 | `fuzz_tester.py` | `core/testers/fuzz_tester.py` | 模糊测试 | |
 | 验证 | `vuln_verifier.py` | `core/verifiers/vuln_verifier.py` | 漏洞验证(10维度) | ✅ |
 | 辅助 | `prerequisite.py` | `core/utils/prerequisite.py` | 依赖检查 | ✅ |
+| 辅助 | `base_path_dict.py` | `core/utils/base_path_dict.py` | base_path获取 | ✅ |
 
 ### SPA应用采集流程（必须遵循）
 
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段1: 基础探测                                              │
+├─────────────────────────────────────────────────────────────┤
+│ 1. HTTP探测: curl -I http://target.com                      │
+│ 2. 技术栈: 检查HTML中Vue/React/Angular标识                   │
+│ 3. 判断SPA: /api/* 返回HTML → SPA应用                        │
+│ 4. 检查Swagger: /swagger-ui.html, /v2/api-docs              │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段2: JS采集（必须使用Playwright）                          │
+├─────────────────────────────────────────────────────────────┤
+│ 1. 启动浏览器: sync_playwright()                             │
+│ 2. 访问目标: page.goto(url, wait_until="networkidle")       │
+│ 3. 等待加载: page.wait_for_timeout(5000)                   │
+│ 4. 提取JS: re.findall(r'<script[^>]+src=["\']([^"\']+)')  │
+│ 5. 识别JS来源: app.js, chunk-vendors.js, chunk-*.js       │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段3: JS深度分析（AST+正则双模式）                          │
+├─────────────────────────────────────────────────────────────┤
+│ 【关键】必须分析每个JS文件:                                  │
+│ 1. baseURL配置:                                           │
+│    - r'baseURL\s*[:=]\s*["\']([^"\']+)["\']'             │
+│    - r'axios\.create\s*\(\s*\{([^}]+)\}'                  │
+│                                                              │
+│ 2. API路径提取:                                             │
+│    - 正则: r'["\'](/(?:user|auth|admin)[^"\']*)["\']'   │
+│    - AST: 使用esprima解析JS AST                            │
+│                                                              │
+│ 3. 发现API后深入分析来源JS:                                  │
+│    → curl下载该JS文件                                        │
+│    → 提取所有API路径（包括混淆前的）                           │
+│    → 提取敏感信息（密钥、硬编码凭证）                          │
+│    → 提取URL模板                                             │
+│                                                              │
+│ 4. base_path获取（按优先级）:                               │
+│    → baseURL配置值                                          │
+│    → 从API路径反推父路径                                     │
+│    → 使用base_path_dict字典fuzzing                          │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段4: API测试                                               │
+├─────────────────────────────────────────────────────────────┤
+│ 1. base_path拼接: discovered_api + base_path              │
+│ 2. 逐个测试API端点:                                         │
+│    - GET: Content-Type → JSON=真实API, HTML=SPA路由         │
+│    - POST: 登录接口 → SQL注入/XSS测试                      │
+│ 3. 发现Swagger → 立即解析 → 获取完整API列表 → 深入测试      │
+│ 4. 401/403=需认证, 200+JSON=检查是否未授权                  │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段5: 漏洞验证（10维度）                                     │
+├─────────────────────────────────────────────────────────────┤
+│ □ 维度1: 响应类型    □ 维度2: 状态码     □ 维度3: 响应长度 │
+│ □ 维度4: WAF拦截    □ 维度5: 敏感信息    □ 维度6: 一致性   │
+│ □ 维度7: SQL注入     □ 维度8: IDOR        □ 维度9: 认证绕过│
+│ □ 维度10: 信息泄露                                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Base Path获取完整流程
+
+```
+【优先级1】从JS配置中获取
+├── axios.create配置中的baseURL值
+├── VUE_APP_API环境变量
+└── process.env.APP_API配置
+
+【优先级2】从nginx反向代理推断
+├── 响应头Server字段分析
+├── 从已发现API路径反推父路径
+└── get_base_path_candidates(discovered_path)
+
+【优先级3】使用base_path_dict字典
+├── COMMON_API_PREFIXES: ["/api", "/webapi", "/auth", ...]
+├── generate_fuzz_paths(api, prefixes)
+└── 对每个候选路径进行测试验证
+
+【使用示例】
+from core.utils.base_path_dict import get_base_path_candidates, generate_fuzz_paths
+
+# 从发现的API路径获取候选base_path
+candidates = get_base_path_candidates("/api/v1/user/login")
+# 结果: ["/api/v1", "/api", "/"]
+
+# 生成fuzzing路径
+fuzz_paths = generate_fuzz_paths("user/login")
+# 结果: ["/api/user/login", "/webapi/user/login", ...]
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ 阶段1: 基础探测                                              │
