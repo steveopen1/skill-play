@@ -342,42 +342,49 @@ class SKILLExecutorV4:
         
     def _probe_and_infer(self):
         """探测端点并推断"""
-        # 测试登录相关接口
-        login_paths = [
-            '/login', '/user/login', '/auth/login',
-            '/app/login', '/sys/login'
+        print("  [探测阶段]")
+        
+        # 1. 测试不需要认证的公开接口
+        public_paths = [
+            '/app/login/getUserInfoByPhone',
+            '/app/login/getVerificationCode',
+            '/sys/user/checkOnlyUser',
         ]
         
-        for path in login_paths:
+        print(f"    测试公开接口...")
+        for path in public_paths:
             url = self._build_url(path)
-            try:
-                r = self.session.get(url, timeout=5)
-                self.response_engine.analyze(url, 'GET', r.text, r.json() if r.headers.get('Content-Type', '').find('json') >= 0 else None)
-                
-                # 学习认证机制
-                self.auth_engine.learn(url, 'GET', r.headers, r.text)
-            except:
-                pass
-                
-        # 测试用户查询接口
-        user_paths = [
-            '/user/info', '/user/list', '/user/getInfo',
-            '/app/user/info', '/app/login/getUserInfoByPhone'
-        ]
-        
-        for path in user_paths:
-            url = self._build_url(path)
-            try:
-                r = self.session.get(url, timeout=5)
-                self.response_engine.analyze(url, 'GET', r.text, r.json() if r.headers.get('Content-Type', '').find('json') >= 0 else None)
-                
-                # 如果返回用户信息，记录
-                if 'userId' in r.text or '"id"' in r.text:
-                    print(f"  [发现] 用户相关接口: {path}")
-                    
-            except:
-                pass
-                
+            
+            # 自动识别参数
+            if 'getUserInfoByPhone' in path:
+                # 探测手机号
+                for prefix in ['138', '139', '188', '187']:
+                    for i in range(5):
+                        phone = f"{prefix}{i:07d}"[:11]
+                        try:
+                            r = self.session.get(f"{url}?phone={phone}", timeout=3)
+                            self.response_engine.analyze(url, 'GET', r.text, None)
+                            
+                            if r.status_code == 200 and 'id' in r.text:
+                                # 提取用户ID
+                                match = re.search(r'"id":\s*(\d+)', r.text)
+                                if match:
+                                    user_id = int(match.group(1))
+                                    if user_id not in self.response_engine.findings['user_ids']:
+                                        self.response_engine.findings['user_ids'].append(user_id)
+                                        self.response_engine.findings['phones'].append(phone)
+                                        print(f"    [发现] {path}?phone={phone} -> userId={user_id}")
+                        except:
+                            pass
+                            
+            elif 'checkOnlyUser' in path:
+                for phone in ['13800138000', '13900000001', '13812345678']:
+                    try:
+                        r = self.session.get(f"{url}?username={phone}", timeout=3)
+                        self.response_engine.analyze(url, 'GET', r.text, None)
+                    except:
+                        pass
+                        
         # 打印推断结果
         ctx = self.response_engine.get_context()
         print(f"\n  [推断结果]")
@@ -415,40 +422,77 @@ class SKILLExecutorV4:
         self._test_sql_injection()
         
     def _test_sensitive_data_exposure(self):
-        """测试敏感信息泄露"""
-        print("\n  [测试] 敏感信息泄露")
+        """测试敏感信息泄露 - 推理式"""
+        print("\n  [测试] 敏感信息泄露 (推理式)")
         
-        # 测试用户查询接口是否返回敏感字段
-        test_paths = [
+        # 从静态端点和发现中自动学习测试路径
+        all_paths = set()
+        
+        # 从静态端点添加
+        for ep in self.static_endpoints:
+            path = ep.path
+            # 匹配用户相关路径
+            if any(k in path.lower() for k in ['user', 'login', 'info', 'profile']):
+                all_paths.add(path)
+                
+        # 添加常见的敏感端点模式
+        common_patterns = [
             '/app/login/getUserInfoByPhone',
+            '/app/user/info',
             '/sys/user/getUserInfo',
-            '/user/info'
+            '/user/info',
+            '/user/list',
         ]
-        
-        for path in test_paths:
-            url = self._build_url(path)
+        for p in common_patterns:
+            all_paths.add(p)
             
-            # 使用手机号参数
-            if 'getUserInfoByPhone' in path:
-                for phone in ['13800138000', '13900000001', '13812345678']:
-                    try:
-                        r = self.session.get(f"{url}?phone={phone}", timeout=5)
-                        if 'password' in r.text.lower():
-                            self.vulnerabilities.append({
-                                'type': 'Sensitive Data Exposure',
-                                'severity': 'HIGH',
-                                'endpoint': path,
-                                'param': 'phone',
-                                'value': phone,
-                                'evidence': '返回password字段'
-                            })
-                            print(f"    [!] {path}?phone={phone} - 返回密码")
-                            
-                            # 提取更多信息
-                            self.response_engine.analyze(url, 'GET', r.text, r.json() if 'json' in r.headers.get('Content-Type','') else None)
-                            
-                    except:
-                        pass
+        print(f"    自动学习到 {len(all_paths)} 个测试路径")
+        
+        for path in all_paths:
+            url = self._build_url(path)
+            try:
+                r = self.session.get(url, timeout=5)
+                
+                # 分析响应
+                self.response_engine.analyze(url, 'GET', r.text, 
+                    r.json() if 'json' in r.headers.get('Content-Type','') else None)
+                    
+                # 检查是否有敏感字段
+                if any(field in r.text.lower() for field in ['password', 'token', 'secret']):
+                    print(f"    [发现] {path} - 包含敏感字段")
+                    
+                    # 如果包含密码，记录漏洞
+                    if 'password' in r.text.lower():
+                        self.vulnerabilities.append({
+                            'type': 'Sensitive Data Exposure',
+                            'severity': 'HIGH',
+                            'endpoint': path,
+                            'evidence': '返回敏感字段'
+                        })
+                        
+            except:
+                pass
+                
+        # 利用已发现的手机号进行探测
+        for phone in self.response_engine.findings['phones']:
+            url = self._build_url('/app/login/getUserInfoByPhone')
+            try:
+                r = self.session.get(f"{url}?phone={phone}", timeout=5)
+                if 'password' in r.text.lower():
+                    self.vulnerabilities.append({
+                        'type': 'Sensitive Data Exposure',
+                        'severity': 'HIGH',
+                        'endpoint': '/app/login/getUserInfoByPhone',
+                        'param': 'phone',
+                        'value': phone,
+                        'evidence': '返回password字段'
+                    })
+                    print(f"    [!] /app/login/getUserInfoByPhone?phone={phone} - 返回密码")
+                    
+                    # 提取更多信息到推理引擎
+                    self.response_engine.analyze(url, 'GET', r.text, r.json() if 'json' in r.headers.get('Content-Type','') else None)
+            except:
+                pass
                         
     def _test_auth_bypass(self):
         """测试认证绕过"""
@@ -490,29 +534,49 @@ class SKILLExecutorV4:
                 pass
                 
     def _test_user_enumeration(self):
-        """测试用户枚举"""
-        print("\n  [测试] 用户枚举")
+        """测试用户枚举 - 推理式"""
+        print("\n  [测试] 用户枚举 (推理式)")
         
-        # 测试手机号枚举
-        for i in range(10):
-            phone = f"138000{i:05d}"
-            url = self._build_url('/app/login/getUserInfoByPhone')
-            try:
-                r = self.session.get(f"{url}?phone={phone}", timeout=5)
-                if r.status_code == 200 and 'id' in r.text:
-                    # 提取userId
-                    match = re.search(r'"id":\s*(\d+)', r.text)
-                    if match:
-                        user_id = match.group(1)
-                        self.param_engine.add_user_ids([int(user_id)])
-                        self.chain_engine.add_finding({
-                            'type': 'UserInfoLeak',
-                            'phone': phone,
-                            'userId': int(user_id)
-                        })
-                        print(f"    [发现] 手机号 {phone} -> userId={user_id}")
-            except:
-                pass
+        # 自动发现手机号格式并枚举
+        discovered_phones = set()
+        
+        # 从已发现的手机号提取前缀
+        for phone in self.response_engine.findings['phones']:
+            # 识别手机号前缀模式
+            if phone.startswith('13') or phone.startswith('15') or phone.startswith('17'):
+                discovered_phones.add(phone)
+                
+        # 常见手机号前缀进行探测
+        common_prefixes = ['138', '139', '188', '187', '186', '185', '156', '176', '177', '173']
+        
+        print(f"    已发现 {len(discovered_phones)} 个手机号")
+        print(f"    开始探测用户枚举...")
+        
+        # 探测更多用户
+        for prefix in common_prefixes[:5]:  # 限制数量
+            for suffix in range(10):  # 只探测少量
+                phone = f"{prefix}{suffix:07d}"[:11]
+                if phone in discovered_phones:
+                    continue
+                    
+                url = self._build_url('/app/login/getUserInfoByPhone')
+                try:
+                    r = self.session.get(f"{url}?phone={phone}", timeout=3)
+                    if r.status_code == 200 and 'id' in r.text:
+                        # 提取userId
+                        match = re.search(r'"id":\s*(\d+)', r.text)
+                        if match:
+                            user_id = int(match.group(1))
+                            discovered_phones.add(phone)
+                            self.param_engine.add_user_ids([user_id])
+                            self.chain_engine.add_finding({
+                                'type': 'UserInfoLeak',
+                                'phone': phone,
+                                'userId': user_id
+                            })
+                            print(f"    [发现] 手机号 {phone} -> userId={user_id}")
+                except:
+                    pass
                 
     def _test_idor(self):
         """测试IDOR"""
