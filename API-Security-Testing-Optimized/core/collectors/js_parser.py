@@ -154,7 +154,7 @@ def extract_with_ast(js_content):
     """
     使用AST（esprima）深度解析JS代码
     
-    需要先安装: pip install esprima
+    【改进】添加简化fallback机制，AST失败时使用简化正则
     
     返回:
         {
@@ -164,6 +164,9 @@ def extract_with_ast(js_content):
             import_sources: import来源
         }
     """
+    # 【改进】先尝试简化正则提取，避免AST复杂报错
+    fallback_result = extract_simplified(js_content)
+    
     try:
         import esprima
         
@@ -227,12 +230,55 @@ def extract_with_ast(js_content):
         result['function_calls'] = list(set(result['function_calls']))
         result['import_sources'] = list(set(result['import_sources']))
         
+        # 合并fallback结果
+        if fallback_result.get('api_paths'):
+            result['fallback_apis'] = fallback_result['api_paths']
+        
         return result
         
     except ImportError:
-        return {'error': 'esprima not installed'}
+        # esprima未安装，使用fallback结果
+        return fallback_result
     except Exception as e:
-        return {'error': str(e)}
+        # AST解析失败，使用fallback结果
+        fallback_result['ast_error'] = str(e)[:50]
+        return fallback_result
+
+
+def extract_simplified(content):
+    """
+    【新增】简化的字符串提取（AST失败时的fallback）
+    
+    使用简单的正则避免复杂模式报错
+    """
+    result = {
+        'string_literals': [],
+        'api_paths': [],
+        'error': 'fallback_mode'
+    }
+    
+    # 简化：提取所有双引号字符串
+    try:
+        double_quoted = re.findall(r'"([^"]{3,150})"', content)
+        result['string_literals'].extend(double_quoted)
+    except:
+        pass
+    
+    try:
+        # 简化：提取所有单引号字符串
+        single_quoted = re.findall(r"'([^']{3,150})'", content)
+        result['string_literals'].extend(single_quoted)
+    except:
+        pass
+    
+    # 筛选API路径
+    api_keywords = ['user', 'auth', 'login', 'logout', 'api', 'frame', 'admin', 'info', 'list', 'supplement', 'dashboard', 'module', 'code', 'attach', 'v1', 'v2', 'v3']
+    for s in result['string_literals']:
+        if any(k in s.lower() for k in api_keywords):
+            if s.startswith('/') or 'axios' in s.lower() or 'fetch' in s.lower():
+                result['api_paths'].append(s)
+    
+    return result
 
 
 def extract_sensitive_from_string(content):

@@ -203,31 +203,57 @@ def browser_collect(config):
                 result['ip_addresses'] = list(all_ips)
                 result['domains'] = list(all_domains)
             
-            # 模拟交互
+            # 模拟交互（增强版：自动尝试登录触发API）
             if interact:
                 try:
+                    # 1. 查找登录表单
                     inputs = page.query_selector_all('input')
-                    for inp in inputs[:5]:
+                    for inp in inputs[:10]:
                         try:
                             inp_type = inp.get_attribute('type')
                             inp_name = inp.get_attribute('name')
+                            inp_id = inp.get_attribute('id')
                             
-                            if inp_type == 'text' or inp_name in ['username', 'user', 'account']:
+                            # 填写用户名
+                            if inp_type == 'text' or inp_name in ['username', 'user', 'account', 'uname'] or inp_id in ['username', 'user']:
                                 inp.fill('admin')
+                            # 填写密码
                             elif inp_type == 'password':
                                 inp.fill('admin123')
                         except:
                             pass
                     
+                    # 2. 查找登录按钮并点击
                     buttons = page.query_selector_all('button')
                     for btn in buttons[:5]:
                         try:
-                            btn.click()
-                            page.wait_for_timeout(300)
+                            btn_text = btn.inner_text()
+                            if any(k in btn_text.lower() for k in ['login', '登录', 'submit', '确定']):
+                                btn.click()
+                                page.wait_for_timeout(2000)  # 等待登录请求
+                                break
                         except:
                             pass
                     
-                    page.wait_for_timeout(1000)
+                    # 3. 如果有form直接提交
+                    try:
+                        page.evaluate("""
+                            () => {
+                                const forms = document.querySelectorAll('form');
+                                forms.forEach(f => {
+                                    if (f.querySelector('input[type="password"]')) {
+                                        f.submit();
+                                    }
+                                });
+                            }
+                        """)
+                        page.wait_for_timeout(2000)
+                    except:
+                        pass
+                    
+                    # 4. 捕获登录后的API请求
+                    page.wait_for_timeout(3000)
+                    
                 except:
                     pass
             

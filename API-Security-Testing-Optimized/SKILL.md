@@ -889,13 +889,72 @@ core/                              # 核心能力池（原子化）
 │ 1. HTTP探测: http_client.py → curl探测                      │
 │    参考: core/collectors/http_client.py                      │
 │                                                              │
-│ 2. 技术栈: browser_collect.py → 检测Vue/React/Angular标识      │
+│ 2. 技术栈识别: browser_collect.py → 检测Vue/React/Angular      │
 │    参考: core/collectors/browser_collect.py                  │
 │                                                              │
 │ 3. 判断SPA: /api/* 返回HTML → SPA应用                      │
 │                                                              │
-│ 4. 检查Swagger: advanced_recon.py → 枚举接口文档          │
-│    参考: core/advanced_recon.py                            │
+│ 4. 【补充】Swagger/接口文档探测:                            │
+│    - /swagger-ui.html                                       │
+│    - /swagger-ui/index.html                                 │
+│    - /v2/api-docs                                          │
+│    - /api-docs                                             │
+│    - /doc.html                                             │
+│    → 发现Swagger立即解析获取完整API列表                       │
+│                                                              │
+│ 5. 【补充】nginx反向代理分析:                              │
+│    - Server响应头识别后端技术                               │
+│    - 常见端口探测: 8080, 8443, 9000, 5000, 3000         │
+│    参考: advanced_recon.py                                  │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段2: JS采集（必须使用Playwright）                          │
+├─────────────────────────────────────────────────────────────┤
+│ 1. 启动浏览器: browser_collect.py                           │
+│    参考: core/collectors/browser_collect.py                  │
+│                                                              │
+│ 2. 访问目标: page.goto(url, wait_until="networkidle")       │
+│                                                              │
+│ 3. 等待加载: page.wait_for_timeout(5000)                   │
+│                                                              │
+│ 4. 【增强】自动交互触发API:                                │
+│    - 自动填写登录表单 (admin/admin123)                      │
+│    - 自动点击登录按钮触发API请求                            │
+│    - 捕获登录后的真实API请求                               │
+│    参考: core/collectors/browser_collect.py (interact=True)  │
+│                                                              │
+│ 5. 提取JS: js_parser.py → 从HTML提取JS文件列表            │
+│    参考: core/collectors/js_parser.py                        │
+│                                                              │
+│ 6. 拦截API: browser_collect.py → 捕获XHR/Fetch请求        │
+│    参考: core/collectors/browser_collect.py                  │
+│                                                              │
+│ 7. 采集敏感信息: sensitive_finder.py → localStorage/响应头│
+│    参考: core/analyzers/sensitive_finder.py                │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段3: JS深度分析（AST+正则双模式）                          │
+├─────────────────────────────────────────────────────────────┤
+│ 1. baseURL配置: js_parser.py → extract_base_urls()        │
+│    参考: core/collectors/js_parser.py                       │
+│    patterns:                                                │
+│    - r'baseURL\s*[:=]\s*["\']([^"\']+)["\']'             │
+│    - r'axios\.create\s*\(\s*\{([^}]+)\}'                  │
+│                                                              │
+│ 2. API路径提取:                                              │
+│    → js_parser.py → extract_api_patterns() (正则)         │
+│    → js_parser.py → extract_with_ast() (AST)              │
+│    → js_parser.py → extract_simplified() (简化fallback)    │
+│    【重要】AST失败时自动使用简化正则fallback               │
+│    参考: core/collectors/js_parser.py                         │
+│                                                              │
+│ 3. 敏感信息: sensitive_finder.py → 提取IP/域名/凭证        │
+│    参考: core/analyzers/sensitive_finder.py                  │
+│                                                              │
+│ 4. base_path获取: base_path_dict.py → get_base_path...     │
+│    参考: core/utils/base_path_dict.py                        │
 └─────────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -1072,6 +1131,7 @@ core/                              # 核心能力池（原子化）
 |------|------|---------|------|
 | **采集** | SPA应用发现API | `browser_collect.py` + `js_parser.py` | `core/collectors/` |
 | **采集** | 快速探测目标 | `http_client.py` | `core/collectors/http_client.py` |
+| **采集** | 自动交互触发API | `browser_collect.py` (interact=True) | `core/collectors/browser_collect.py` |
 | **采集** | JS采集（简单） | `js_collector.py` | `core/collectors/js_collector.py` |
 | **采集** | 浏览器采集（简单） | `browser_collector.py` | `core/collectors/browser_collector.py` |
 | **采集** | URL批量采集 | `url_collector.py` | `core/collectors/url_collector.py` |
