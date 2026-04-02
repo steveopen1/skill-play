@@ -1,7 +1,21 @@
 """
 JS源码解析 - 从HTML/JS中提取API配置
+
+【重要】使用AST+正则双模式解析：
+- AST模式：使用esprima解析JS AST，提取所有字符串字面量
+- 正则模式：快速提取API路径、baseURL、凭证等
+
 输入: {html, js_urls, base_url}
-输出: {api_patterns, base_urls, tokens, endpoints}
+输出: {
+    api_patterns: API路径,
+    base_urls: baseURL配置,
+    tokens: token,
+    endpoints: 完整端点,
+    sensitive_urls: 敏感URL,
+    ip_addresses: IP地址,
+    domains: 相关域名,
+    credentials: 发现的凭证
+}
 """
 
 import re
@@ -13,28 +27,38 @@ requests.packages.urllib3.disable_warnings()
 
 def js_parser(config):
     """
-    解析JS文件提取API配置
+    解析JS文件提取API配置（AST+正则双模式）
     
     输入:
         html: string - 页面HTML
         js_urls?: string[] - JS URL列表
         base_url: string - 基准URL
+        use_ast?: boolean - 是否使用AST解析（默认True）
     
     输出:
         api_patterns: string[] - API路径
         base_urls: string[] - API Base URL
         tokens: string[] - 可能的token
         endpoints: string[] - 完整端点
+        sensitive_urls: string[] - 敏感URL
+        ip_addresses: string[] - IP地址
+        domains: string[] - 相关域名
+        credentials: object - 发现的凭证
     """
     html = config.get('html', '')
     js_urls = config.get('js_urls', [])
     base_url = config.get('base_url', '')
+    use_ast = config.get('use_ast', True)
     
     result = {
         'api_patterns': [],
         'base_urls': [],
         'tokens': [],
-        'endpoints': []
+        'endpoints': [],
+        'sensitive_urls': [],
+        'ip_addresses': [],
+        'domains': [],
+        'credentials': {}
     }
     
     # 从HTML中提取JS URL
@@ -49,8 +73,14 @@ def js_parser(config):
     api_patterns = extract_api_patterns(html)
     result['api_patterns'] = api_patterns
     
+    # 从HTML中提取敏感URL和IP
+    html_sensitive = extract_sensitive_from_string(html)
+    result['sensitive_urls'].extend(html_sensitive.get('urls', []))
+    result['ip_addresses'].extend(html_sensitive.get('ips', []))
+    result['domains'].extend(html_sensitive.get('domains', []))
+    
     # 分析JS文件
-    for js_url in js_urls[:10]:  # 限制数量
+    for js_url in js_urls[:15]:  # 增加分析数量
         full_url = resolve_js_url(js_url, base_url)
         if not full_url:
             continue
@@ -60,7 +90,22 @@ def js_parser(config):
             if not js_content:
                 continue
             
-            # 提取API路径
+            # 【新增】AST模式解析
+            if use_ast:
+                ast_result = extract_with_ast(js_content)
+                if 'error' not in ast_result:
+                    # 从AST字符串字面量中提取API
+                    for literal in ast_result.get('string_literals', []):
+                        if is_api_path(literal):
+                            result['api_patterns'].append(literal)
+                        # 提取URL
+                        urls = extract_urls_from_string(literal)
+                        result['sensitive_urls'].extend(urls)
+                        # 提取IP
+                        ips = extract_ip_from_string(literal)
+                        result['ip_addresses'].extend(ips)
+            
+            # 正则模式提取API路径
             js_api_patterns = extract_api_patterns(js_content)
             result['api_patterns'].extend(js_api_patterns)
             
@@ -72,6 +117,14 @@ def js_parser(config):
             js_tokens = extract_tokens(js_content)
             result['tokens'].extend(js_tokens)
             
+            # 【新增】提取敏感信息
+            sensitive = extract_sensitive_from_string(js_content)
+            result['sensitive_urls'].extend(sensitive.get('urls', []))
+            result['ip_addresses'].extend(sensitive.get('ips', []))
+            result['domains'].extend(sensitive.get('domains', []))
+            if sensitive.get('credentials'):
+                result['credentials'].update(sensitive['credentials'])
+            
         except:
             pass
     
@@ -79,6 +132,9 @@ def js_parser(config):
     result['api_patterns'] = list(set(result['api_patterns']))
     result['base_urls'] = list(set(result['base_urls']))
     result['tokens'] = list(set(result['tokens']))
+    result['sensitive_urls'] = list(set(result['sensitive_urls']))
+    result['ip_addresses'] = list(set(result['ip_addresses']))
+    result['domains'] = list(set(result['domains']))
     
     # 生成完整端点
     for base in result['base_urls']:
@@ -92,6 +148,170 @@ def js_parser(config):
     result['endpoints'] = list(set(result['endpoints']))
     
     return result
+
+
+def extract_with_ast(js_content):
+    """
+    使用AST（esprima）深度解析JS代码
+    
+    需要先安装: pip install esprima
+    
+    返回:
+        {
+            string_literals: 所有字符串字面量,
+            object_properties: 对象属性,
+            function_calls: 函数调用,
+            import_sources: import来源
+        }
+    """
+    try:
+        import esprima
+        
+        # 解析JS为AST（带位置信息）
+        ast = esprima.parse(js_content, sourceType='script', range=True)
+        
+        result = {
+            'string_literals': [],
+            'object_properties': {},
+            'function_calls': [],
+            'import_sources': []
+        }
+        
+        def traverse(node, depth=0):
+            if depth > 30:  # 防止过深递归
+                return
+            
+            if hasattr(node, 'type'):
+                # 字符串字面量
+                if node.type == 'Literal' and isinstance(node.value, str):
+                    result['string_literals'].append(node.value)
+                
+                # 对象属性（键值对）
+                elif node.type == 'Property':
+                    key_node = getattr(node, 'key', None)
+                    value_node = getattr(node, 'value', None)
+                    if key_node and hasattr(key_node, 'value'):
+                        key = key_node.value
+                        value = getattr(value_node, 'value', None) if value_node else None
+                        if value and isinstance(value, str):
+                            result['object_properties'][key] = value
+                
+                # 函数调用
+                elif node.type == 'CallExpression':
+                    callee = getattr(node, 'callee', None)
+                    if callee:
+                        if hasattr(callee, 'name'):
+                            result['function_calls'].append(callee.name)
+                        elif hasattr(callee, 'value'):
+                            result['function_calls'].append(callee.value)
+                
+                # Import声明
+                elif node.type == 'ImportDeclaration':
+                    source = getattr(node, 'source', None)
+                    if source and hasattr(source, 'value'):
+                        result['import_sources'].append(source.value)
+                
+                # 递归遍历子节点
+                for child in node.__dict__.values():
+                    if isinstance(child, list):
+                        for item in child:
+                            if hasattr(item, 'type'):
+                                traverse(item, depth + 1)
+                    elif hasattr(child, 'type'):
+                        traverse(child, depth + 1)
+        
+        traverse(ast.body)
+        
+        # 去重
+        result['string_literals'] = list(set(result['string_literals']))
+        result['function_calls'] = list(set(result['function_calls']))
+        result['import_sources'] = list(set(result['import_sources']))
+        
+        return result
+        
+    except ImportError:
+        return {'error': 'esprima not installed'}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def extract_sensitive_from_string(content):
+    """
+    从字符串中提取敏感信息
+    
+    返回:
+        {
+            urls: 发现的URL,
+            ips: 发现的IP,
+            domains: 发现的域名,
+            credentials: 发现的凭证
+        }
+    """
+    result = {
+        'urls': set(),
+        'ips': set(),
+        'domains': set(),
+        'credentials': {}
+    }
+    
+    # 提取HTTP/HTTPS URL
+    urls = re.findall(r'https?://[^\s"\'<>]+', content)
+    result['urls'].update(urls)
+    
+    # 提取域名
+    for url in urls:
+        parsed = urlparse(url)
+        if parsed.netloc:
+            result['domains'].add(parsed.netloc)
+    
+    # 提取IPv4地址
+    ipv4_pattern = r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
+    ips = re.findall(ipv4_pattern, content)
+    result['ips'].update(ips)
+    
+    # 提取凭证
+    credential_patterns = [
+        (r'(?:api[_-]?key|API[_-]?KEY)\s*[:=]\s*["\']([^"\']+)["\']', 'api_key'),
+        (r'(?:secret[_-]?key|SECRET[_-]?KEY)\s*[:=]\s*["\']([^"\']+)["\']', 'secret_key'),
+        (r'(?:access[_-]?token|ACCESS[_-]?TOKEN)\s*[:=]\s*["\']([^"\']+)["\']', 'access_token'),
+        (r'(?:password|passwd|pwd)\s*[:=]\s*["\']([^"\']+)["\']', 'password'),
+        (r'Bearer\s+([a-zA-Z0-9\-_\.]+)', 'bearer_token'),
+        (r'Basic\s+([a-zA-Z0-9\-_\.+]+=*)', 'basic_auth'),
+    ]
+    
+    for pattern, cred_type in credential_patterns:
+        matches = re.findall(pattern, content, re.IGNORECASE)
+        for match in matches:
+            if len(match) > 3 and 'undefined' not in match.lower():  # 过滤无效值
+                result['credentials'][cred_type] = match
+    
+    return {
+        'urls': list(result['urls']),
+        'ips': list(result['ips']),
+        'domains': list(result['domains']),
+        'credentials': result['credentials']
+    }
+
+
+def extract_urls_from_string(content):
+    """从字符串中提取URL"""
+    urls = set()
+    
+    http_urls = re.findall(r'https?://[^\s"\'<>]+', content)
+    urls.update(http_urls)
+    
+    return list(urls)
+
+
+def extract_ip_from_string(content):
+    """从字符串中提取IP地址"""
+    ips = set()
+    
+    ipv4_pattern = r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
+    matches = re.findall(ipv4_pattern, content)
+    ips.update(matches)
+    
+    return list(ips)
 
 
 def extract_js_urls(html):

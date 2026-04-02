@@ -547,10 +547,69 @@ token泄露 → 用token访问敏感接口 → 越权操作
 2. 从DOM提取所有JS文件
    js_files = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', page.content())
    
-3. 下载并分析每个JS文件
-   - app.js (主应用)
-   - chunk-vendors.js (第三方库)
-   - chunk-*.js (业务模块)
+3. 【新增】拦截所有请求和响应
+   - page.on('request') → 捕获所有API请求
+   - page.on('response') → 捕获所有响应（提取IP、域名）
+   
+4. 【新增】采集敏感信息
+   - localStorage: 检查token、key等敏感数据
+   - 响应头: 提取server版本、IP、域名信息
+```
+
+**阶段3：JS深度分析（AST+正则双模式提取）**
+```
+【关键】必须使用AST+正则双模式进行深度分析
+
+1. 提取baseURL配置（最优先！）
+   patterns:
+   - r'baseURL\s*[:=]\s*["\']([^"\']+)["\']'
+   - r'axios\.create\s*\(\s*\{([^}]+)\}'
+   
+   重要发现：
+   - baseURL:"" 为空 → 使用相对路径 + nginx代理
+   - baseURL:"https://api.xxx.com" → 使用配置的域名前缀
+   - baseURL不存在 → 使用同源请求
+
+2. AST+正则双模式提取API端点
+   
+   【正则模式】（快速提取）:
+   patterns:
+   - r'["\'](/(?:user|auth|admin|login|logout|api|v\d|frame)[^"\']*)["\']'
+   - r'axios\.[a-z]+\(["\']([^"\']+)["\']'
+   - r'fetch\(["\']([^"\']+)["\']'
+   - r'\.get\(["\']([^"\']+)["\']'
+   - r'\.post\(["\']([^"\']+)["\']'
+   
+   【AST模式】（深度提取）:
+   - 使用esprima.parse()解析JS AST
+   - 提取所有字符串字面量
+   - 从字符串字面量中筛选API路径
+   
+   【重要】发现API后深入分析来源JS:
+   → 记录API所在的JS文件名
+   → 深度分析该JS文件（用curl下载）:
+      - 获取完整JS内容（可能有混淆，需多次提取）
+      - 使用AST+正则双模式提取所有API路径
+      - 提取敏感信息（API密钥、硬编码凭证等）
+      - 提取URL模板（如 /user/${userId}/info）
+
+3. 【新增】敏感信息提取
+   从JS/响应中提取:
+   - IP地址: r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
+   - 外部域名: 从URL中提取netloc
+   - 凭证信息:
+     * api_key, secret_key: r'(?:api[_-]?key|secret[_-]?key)\s*[:=]\s*["\']([^"\']+)["\']'
+     * token: r'(?:access[_-]?token|Bearer)\s+([a-zA-Z0-9\-_\.]+)'
+     * password: r'password\s*[:=]\s*["\']([^"\']+)["\']'
+
+4. 提取环境变量配置
+   patterns:
+   - r'VUE_APP_\w+'
+   - r'process\.env\.(\w+)'
+   
+5. 提取URL模板字符串
+   patterns:
+   - r'`[^`]*(?:api|user|auth|admin)[^`]*`'
 ```
 
 **阶段3：JS深度分析（AST+正则双模式提取）**
@@ -651,23 +710,34 @@ token泄露 → 用token访问敏感接口 → 越权操作
    □ 目标可访问
    □ 技术栈识别完成
    □ 判断为SPA应用
+   □ 检查Swagger/接口文档
 
 □ 阶段2: JS采集
    □ Playwright无头浏览器启动
    □ wait_until="networkidle"
    □ 额外等待3-5秒
    □ 获取所有JS文件列表
+   □ 拦截API请求（XHR/Fetch）
+   □ 采集响应头（Server、IP、域名）
+   □ 采集localStorage敏感信息
 
-□ 阶段3: JS分析
+□ 阶段3: JS分析（AST+正则双模式）
    □ 提取baseURL配置
-   □ 提取所有API路径
+   □ AST模式解析JS字符串字面量
+   □ 正则模式提取API路径
    □ 提取环境变量
    □ 提取URL模板
+   □ 【新增】提取IP地址
+   □ 【新增】提取外部域名
+   □ 【新增】提取敏感凭证
+   □ 【新增】深度分析来源JS文件
 
 □ 阶段4: API测试
+   □ 确定base_path（配置→反推→字典）
    □ 逐个测试API端点
    □ 区分JSON/HTML响应
    □ 测试POST登录接口
+   □ 发现Swagger立即解析
 
 □ 阶段5: 漏洞验证
    □ 10维度验证
