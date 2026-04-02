@@ -264,73 +264,19 @@ class AssetDiscovery:
             
         except Exception as e:
             print(f"  [WARN] API Parser 失败: {e}")
+            
+        except Exception as e:
+            print(f"  [WARN] API Parser 失败: {e}")
     
     def _analyze_dynamic(self):
-        """动态分析 (dynamic_api_analyzer)"""
-        try:
-            from core.dynamic_api_analyzer import DynamicAPIAnalyzer
-            
-            analyzer = DynamicAPIAnalyzer(self.target)
-            results = analyzer.analyze_full()
-            
-            for ep in results.get('endpoints', []):
-                path = ep.get('path', '')
-                method = ep.get('method', 'GET')
-                params_data = ep.get('params', [])
-                if isinstance(params_data, list):
-                    params_dict = {p: True for p in params_data}
-                else:
-                    params_dict = params_data
-                
-                self.ctx.add_endpoints([{
-                    'path': path,
-                    'method': method,
-                    'params': params_dict,
-                    'source': f"dynamic_{ep.get('source', 'unknown')}",
-                    'semantic_type': self._infer_semantic_type(path),
-                }])
-            
-            print(f"  动态分析: {results.get('unique_endpoints', 0)} 端点")
-            
-        except Exception as e:
-            print(f"  [WARN] Dynamic API Analyzer 失败: {e}")
+        """动态分析 (dynamic_api_analyzer) - 禁用以避免卡住"""
+        print("  [SKIP] 动态分析 (暂用静态解析)")
+        pass
     
     def _hook_apis(self):
-        """API Hook (api_interceptor) - 获取真实参数"""
-        if not self.ctx.playwright_available:
-            print("  [SKIP] Playwright 不可用，跳过 API Hook")
-            return
-        
-        try:
-            from core.api_interceptor import APIInterceptor
-            
-            print("  [API Hook] 启动...")
-            interceptor = APIInterceptor(self.target)
-            hook_results = interceptor.hook_all_apis()
-            
-            # 保存 Hook 结果到上下文
-            self.ctx.hooked_apis = hook_results.get('endpoints', [])
-            self.ctx.sensitive_apis = hook_results.get('sensitive', [])
-            self.ctx.test_vectors = hook_results.get('test_vectors', [])
-            
-            # 将 Hook 到的端点添加到上下文的端点列表
-            for hooked_ep in hook_results.get('endpoints', []):
-                path = hooked_ep.get('path', hooked_ep.get('url', ''))
-                if path and '/' in path:
-                    self.ctx.add_endpoints([{
-                        'path': path,
-                        'method': hooked_ep.get('method', 'GET'),
-                        'params': hooked_ep.get('params', {}),
-                        'source': f"hooked_{hooked_ep.get('source', 'unknown')}",
-                        'semantic_type': hooked_ep.get('semantic', 'unknown'),
-                    }])
-            
-            print(f"  API Hook: {len(self.ctx.hooked_apis)} 个 API 调用")
-            print(f"  敏感操作: {len(self.ctx.sensitive_apis)} 个")
-            print(f"  测试向量: {len(self.ctx.test_vectors)} 个")
-            
-        except Exception as e:
-            print(f"  [WARN] API Hook 失败: {e}")
+        """API Hook (api_interceptor) - 禁用以避免卡住"""
+        print("  [SKIP] API Hook (暂用静态解析)")
+        pass
     
     def _probe_parent_paths(self):
         """父路径探测"""
@@ -340,7 +286,22 @@ class AssetDiscovery:
             parser = APIEndpointParser(self.target, self.session)
             parser.discover_js_files()
             
-            self.ctx.parent_paths = parser.probe_parent_paths()
+            # 获取解析后的父路径（set 格式）
+            parsed_endpoints = parser.parse_js_files(self.js_files)
+            
+            # 转换 set 为 dict 格式
+            for parent in parser.parent_paths:
+                url = self.target.rstrip('/') + parent
+                try:
+                    r = self.session.get(url, timeout=5, allow_redirects=False)
+                    self.ctx.parent_paths[parent] = {
+                        'path': parent,
+                        'status': r.status_code,
+                        'is_api': 'json' in r.headers.get('Content-Type', '').lower() or '{' in r.text[:100],
+                    }
+                except:
+                    pass
+            
             print(f"  父路径: {len(self.ctx.parent_paths)} 个")
             
         except Exception as e:
@@ -415,6 +376,15 @@ class VulnerabilityTester:
                 for payload in sqli_payloads[:2]:
                     test_url = url.replace('id=1', f'id={payload}')
                     r = self.session.get(test_url, timeout=5)
+                    
+                    # 跳过 HTML 响应（通常是 nginx fallback）
+                    content_type = r.headers.get('Content-Type', '')
+                    if 'text/html' in content_type or r.text.strip().startswith('<!DOCTYPE'):
+                        continue
+                    
+                    # 检查是否是 JSON 响应
+                    if 'application/json' not in content_type and '{' not in r.text[:100]:
+                        continue
                     
                     sqli_indicators = ['sql', 'syntax', 'mysql', 'oracle', 'error', 'sqlite']
                     if any(ind in r.text.lower() for ind in sqli_indicators):
@@ -882,13 +852,24 @@ def _run_fuzzing(ctx: TestContext):
                 source=ep_data.get('source', ''),
                 semantic_type=ep_data.get('semantic_type', ''),
             )
-            for p_name, p_val in ep_data.get('params', {}).items():
-                ep.params.append(APIParam(
-                    name=p_name,
-                    param_type=ParamType.QUERY,
-                    location=ParamLocation.URL,
-                    required=False,
-                ))
+            params = ep_data.get('params', {})
+            if isinstance(params, dict):
+                for p_name, p_val in params.items():
+                    ep.params.append(APIParam(
+                        name=p_name,
+                        param_type=ParamType.QUERY,
+                        location=ParamLocation.URL,
+                        required=False,
+                    ))
+            elif isinstance(params, list):
+                for p in params:
+                    if isinstance(p, dict) and 'name' in p:
+                        ep.params.append(APIParam(
+                            name=p['name'],
+                            param_type=ParamType.QUERY,
+                            location=ParamLocation.URL,
+                            required=p.get('required', False),
+                        ))
             parsed_eps.append(ep)
         
         fuzzer = APIFuzzer(ctx.target, ctx.session)
