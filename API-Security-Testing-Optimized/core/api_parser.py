@@ -594,29 +594,95 @@ class APIEndpointParser:
         
         self.parsed_endpoints = unique
     
-    def probe_parent_paths(self) -> Dict[str, Any]:
-        """探测父路径，返回可访问的路径"""
+    def probe_parent_paths(self, known_api_paths: list = None) -> Dict[str, Any]:
+        """
+        探测父路径，返回可访问的路径
+        
+        Args:
+            known_api_paths: 已知的后端 API 路径列表（如 ['/prod-api/auth/login']）
+                             如果为 None，会自动尝试常见路径
+        """
         print(f"  [API Parser] 探测父路径 ({len(self.parent_paths)} 个)...")
         
         accessible_paths = {}
         
+        # 从 target 中提取根路径
+        from urllib.parse import urlparse
+        parsed = urlparse(self.target)
+        root_origin = f"{parsed.scheme}://{parsed.netloc}"
+        subpath = parsed.path.rstrip('/')
+        
+        # 检测是否有子路径（前端路由）
+        has_subpath = len(subpath.split('/')) > 1
+        if has_subpath:
+            print(f"  [INFO] 检测到前端子路径: {subpath}")
+        
+        # 常见的根路径 API（用于检测前缀）
+        root_api_paths = [
+            '/prod-api/auth/login',
+            '/prod-api/system/user/info',
+            '/prod-api/captcha',
+            '/api/auth/login',
+            '/api/system/user/info',
+            '/admin-api/auth/login',
+        ]
+        
+        # 探测根路径的 API 前缀
+        api_prefix = None
+        root_url = root_origin
+        
+        for path in root_api_paths:
+            url = root_url + path
+            try:
+                r = self.session.get(url, timeout=5, allow_redirects=False)
+                ct = r.headers.get('Content-Type', '').lower()
+                if 'json' in ct and r.status_code != 404:
+                    if '/prod-api/' in path:
+                        api_prefix = '/prod-api/'
+                    elif '/admin-api/' in path:
+                        api_prefix = '/admin-api/'
+                    elif '/api/' in path:
+                        api_prefix = '/api/'
+                    print(f"  [API Prefix] 检测到后端前缀: {api_prefix}")
+                    break
+            except:
+                pass
+        
+        # 根据是否有子路径，决定如何探测
         for parent in self.parent_paths:
-            url = self.target.rstrip('/') + parent
+            if has_subpath and api_prefix:
+                # 有子路径 + 有前缀: 探测根路径的 API
+                # URL: root_origin + api_prefix + parent
+                test_path = api_prefix + parent.lstrip('/')
+                url = root_origin + test_path
+            elif api_prefix:
+                # 无子路径 + 有前缀: 探测 target + 前缀 + parent
+                test_path = self.target.rstrip('/') + api_prefix + parent.lstrip('/')
+                url = test_path
+            else:
+                # 无前缀: 探测原始路径
+                url = self.target.rstrip('/') + parent
+                test_path = parent
+            
             try:
                 r = self.session.get(url, timeout=5, allow_redirects=False)
                 
+                ct = r.headers.get('Content-Type', '').lower()
+                is_api = 'json' in ct or '{' in r.text[:100]
+                
                 result = {
-                    'path': parent,
+                    'path': test_path,
+                    'original_path': parent,
+                    'prefix': api_prefix,
                     'status': r.status_code,
-                    'content_type': r.headers.get('Content-Type', ''),
-                    'is_api': 'json' in r.headers.get('Content-Type', '').lower() or '{' in r.text[:100],
+                    'content_type': ct,
+                    'is_api': is_api,
                     'content_length': len(r.text),
                 }
                 
-                accessible_paths[parent] = result
-                
-                if result['is_api']:
-                    print(f"    [API] {parent}: {r.status_code}")
+                if is_api:
+                    print(f"    [API] {test_path}: {r.status_code}")
+                    accessible_paths[test_path] = result
                 
             except Exception as e:
                 pass
