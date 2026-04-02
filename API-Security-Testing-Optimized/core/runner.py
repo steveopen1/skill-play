@@ -3,23 +3,17 @@
 """
 SKILL.md 的完整可执行实现
 
-完整测试流程:
-- 阶段 0: 前置检查 (依赖检查)
-- 阶段 1: 资产发现 (端点、JS、SPA)
-- 阶段 2: 多维度漏洞分析
-  - 2.1 SQL注入/XSS/路径遍历测试
-  - 2.3 GraphQL 专项测试
-  - 2.4 IDOR/越权测试
-  - 2.5 暴力破解测试
-  - 2.6 WebSocket 测试
-- 阶段 3: 云存储安全测试
-- 阶段 4: 报告生成
+模块联动流程：
+1. TestContext - 共享测试上下文（session、endpoints、vulnerabilities）
+2. PrerequisiteChecker - 前置检查
+3. AssetDiscovery - 端点发现（静态+动态+Hook）
+4. VulnerabilityTester - 漏洞测试
+5. APIFuzzer - 模糊测试
+6. CloudStorageTester - 云存储测试
+7. ReportGenerator - 报告生成
 
 使用方式:
     python3 -m core.runner http://target.com
-    
-    from core.runner import run_skill
-    result = run_skill('http://target.com')
 """
 
 import sys
@@ -28,23 +22,74 @@ import time
 import json
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set
+from dataclasses import dataclass, field
 
 sys.path.insert(0, '/workspace/skill-play/API-Security-Testing-Optimized')
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class TestContext:
+    """
+    测试上下文 - 各模块共享数据
+    """
+    target: str
+    session: Any = None
+    
+    # 共享数据
+    endpoints: List[Dict] = field(default_factory=list)
+    vulnerabilities: List[Dict] = field(default_factory=list)
+    cloud_findings: List[Dict] = field(default_factory=list)
+    parent_paths: Dict = field(default_factory=dict)
+    tech_stack: Dict = field(default_factory=dict)
+    
+    # Hook 到的 API
+    hooked_apis: List[Dict] = field(default_factory=list)
+    sensitive_apis: List[Dict] = field(default_factory=list)
+    test_vectors: List[Dict] = field(default_factory=list)
+    
+    # 状态
+    playwright_available: bool = False
+    backend_reachable: bool = True
+    nginx_fallback: bool = False
+    
+    def add_endpoints(self, endpoints: List[Dict]):
+        """添加端点（去重）"""
+        existing = set((e.get('method', 'GET'), e.get('path', '')) for e in self.endpoints)
+        for ep in endpoints:
+            key = (ep.get('method', 'GET'), ep.get('path', ''))
+            if key not in existing:
+                self.endpoints.append(ep)
+                existing.add(key)
+    
+    def add_vulnerability(self, vuln: Dict):
+        """添加漏洞（去重）"""
+        key = (vuln.get('type', ''), vuln.get('endpoint', ''))
+        existing = set((v.get('type', ''), v.get('endpoint', '')) for v in self.vulnerabilities)
+        if key not in existing:
+            self.vulnerabilities.append(vuln)
+    
+    def get_all_endpoints(self) -> List[Dict]:
+        """获取所有端点（包括 Hook 到的）"""
+        all_eps = list(self.endpoints)
+        for hook in self.hooked_apis:
+            path = hook.get('path', hook.get('url', ''))
+            method = hook.get('method', 'GET')
+            if not any(e.get('path') == path and e.get('method') == method for e in all_eps):
+                all_eps.append(hook)
+        return all_eps
+
+
 class PrerequisiteChecker:
     """阶段 0: 前置检查"""
     
     @staticmethod
-    def check() -> bool:
-        """检查所有依赖"""
+    def check(ctx: TestContext) -> bool:
+        """检查所有依赖，设置上下文"""
         print("[0] 前置检查")
         print("-" * 70)
-        
-        results = {}
         
         # playwright
         try:
@@ -52,27 +97,30 @@ class PrerequisiteChecker:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 browser.close()
-            results['playwright'] = True
+            ctx.playwright_available = True
             print("  [OK] playwright")
         except Exception as e:
-            results['playwright'] = False
+            ctx.playwright_available = False
             print(f"  [FAIL] playwright: {e}")
             print("  [TRY] 尝试修复...")
             if PrerequisiteChecker.fix_playwright():
-                results['playwright'] = True
+                ctx.playwright_available = True
                 print("  [OK] playwright 修复成功")
         
         # requests
         try:
             import requests
-            results['requests'] = True
+            ctx.session = requests.Session()
+            ctx.session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
             print("  [OK] requests")
         except ImportError:
-            results['requests'] = False
             print("  [FAIL] requests")
+            return False
         
         print()
-        return results.get('playwright', False) and results.get('requests', False)
+        return ctx.playwright_available and ctx.session is not None
     
     @staticmethod
     def fix_playwright():
@@ -93,42 +141,50 @@ class PrerequisiteChecker:
 
 
 class AssetDiscovery:
-    """阶段 1: 资产发现 (增强版)"""
+    """阶段 1: 资产发现
     
-    def __init__(self, target: str, session):
-        self.target = target
-        self.session = session
-        self.endpoints = []
+    使用 TestContext 共享数据
+    """
+    
+    def __init__(self, ctx: TestContext):
+        self.ctx = ctx
+        self.target = ctx.target
+        self.session = ctx.session
         self.js_files = []
-        self.tech_stack = {}
-        self.parent_paths = {}
-        self.api_parser = None
     
-    def run(self) -> Dict:
-        """执行资产发现"""
+    def run(self):
+        """执行资产发现（联动各模块）"""
         print("[1] 资产发现")
         print("-" * 70)
         
         # 1.1 目标探测
         self._probe_target()
         
-        # 1.2 使用增强版 API 解析器
-        self._parse_endpoints_with_api_parser()
+        # 1.2 静态分析 (api_parser)
+        self._parse_with_api_parser()
         
-        # 1.3 父路径探测
+        # 1.3 动态分析 (dynamic_api_analyzer)
+        self._analyze_dynamic()
+        
+        # 1.4 API Hook (api_interceptor) - 获取真实参数
+        self._hook_apis()
+        
+        # 1.5 父路径探测
         self._probe_parent_paths()
         
-        print(f"\n  发现端点: {len(self.endpoints)}")
-        print(f"  父路径: {len(self.parent_paths)}")
-        print(f"  技术栈: {self.tech_stack}")
+        # 更新上下文
+        self.ctx.tech_stack = self.ctx.tech_stack
+        self.ctx.backend_reachable = len([p for p in self.ctx.parent_paths.values() if p.get('is_api')]) > 0
+        self.ctx.nginx_fallback = not self.ctx.backend_reachable
+        
+        print(f"\n  发现端点: {len(self.ctx.endpoints)}")
+        print(f"  Hook API: {len(self.ctx.hooked_apis)}")
+        print(f"  敏感 API: {len(self.ctx.sensitive_apis)}")
+        print(f"  父路径: {len(self.ctx.parent_paths)}")
+        print(f"  技术栈: {self.ctx.tech_stack}")
         print()
         
-        return {
-            'endpoints': self.endpoints,
-            'js_files': self.js_files,
-            'tech_stack': self.tech_stack,
-            'parent_paths': self.parent_paths,
-        }
+        return self.ctx
     
     def _probe_target(self):
         """基础探测"""
@@ -184,96 +240,112 @@ class AssetDiscovery:
         
         return 'unknown'
     
-    def _parse_endpoints_with_api_parser(self):
-        """使用增强版 API 解析器"""
+    def _parse_with_api_parser(self):
+        """静态分析 (api_parser)"""
         try:
             from core.api_parser import APIEndpointParser
             
-            self.api_parser = APIEndpointParser(self.target, self.session)
-            js_files = self.api_parser.discover_js_files()
-            self.js_files = js_files
-            print(f"  发现 JS 文件: {len(js_files)}")
+            parser = APIEndpointParser(self.target, self.session)
+            self.js_files = parser.discover_js_files()
+            print(f"  发现 JS 文件: {len(self.js_files)}")
             
-            # 解析端点
-            parsed_endpoints = self.api_parser.parse_js_files(js_files)
+            parsed_endpoints = parser.parse_js_files(self.js_files)
             
-            # 转换为字典格式
             for ep in parsed_endpoints:
-                self.endpoints.append({
+                self.ctx.add_endpoints([{
                     'path': ep.path,
                     'method': ep.method,
                     'params': [{'name': p.name, 'type': p.param_type.value, 'required': p.required} for p in ep.params],
                     'source': ep.source,
                     'semantic_type': ep.semantic_type,
                     'has_params': ep.has_params(),
-                })
+                }])
             
-            # 打印摘要
-            if self.api_parser:
-                summary = self.api_parser.get_endpoints_summary()
-                for line in summary.split('\n'):
-                    if line.strip():
-                        print(f"  {line}")
-            
-            # 总是尝试动态分析来验证静态发现
-            print(f"\n  [动态分析] 启动动态分析验证...")
-            self._run_dynamic_analysis()
+            print(f"  静态解析: {len(parsed_endpoints)} 端点")
             
         except Exception as e:
-            print(f"  [WARN] API 解析器失败: {e}")
-            # 回退到旧方法
-            self._fallback_js_analysis()
+            print(f"  [WARN] API Parser 失败: {e}")
     
-    def _run_dynamic_analysis(self):
-        """运行动态 API 分析"""
+    def _analyze_dynamic(self):
+        """动态分析 (dynamic_api_analyzer)"""
         try:
             from core.dynamic_api_analyzer import DynamicAPIAnalyzer
             
             analyzer = DynamicAPIAnalyzer(self.target)
+            results = analyzer.analyze_full()
             
-            # 执行动态分析
-            results = analyzer.analyze_full(max_requests=100)
-            
-            # 合并动态发现的端点
-            dynamic_endpoints = results.get('endpoints', [])
-            print(f"  [动态分析] 发现 {len(dynamic_endpoints)} 个端点")
-            
-            for ep in dynamic_endpoints:
-                # 检查是否已存在
+            for ep in results.get('endpoints', []):
                 path = ep.get('path', '')
                 method = ep.get('method', 'GET')
+                params_data = ep.get('params', [])
+                if isinstance(params_data, list):
+                    params_dict = {p: True for p in params_data}
+                else:
+                    params_dict = params_data
                 
-                exists = any(
-                    e.get('path') == path and e.get('method') == method
-                    for e in self.endpoints
-                )
-                
-                if not exists and path:
-                    # params 可能是列表或字典
-                    params_data = ep.get('params', [])
-                    if isinstance(params_data, list):
-                        params_dict = {p: True for p in params_data}
-                    else:
-                        params_dict = params_data
-                    
-                    self.endpoints.append({
-                        'path': path,
-                        'method': method,
-                        'params': params_dict,
-                        'source': f"dynamic_{ep.get('source', 'unknown')}",
-                        'semantic_type': self._infer_semantic_type(path),
-                        'has_params': bool(params_dict),
-                    })
-                    print(f"  [动态] {method} {path}")
+                self.ctx.add_endpoints([{
+                    'path': path,
+                    'method': method,
+                    'params': params_dict,
+                    'source': f"dynamic_{ep.get('source', 'unknown')}",
+                    'semantic_type': self._infer_semantic_type(path),
+                }])
             
-            # 更新摘要
-            param_count = sum(1 for ep in self.endpoints if ep.get('has_params') and ep.get('params'))
-            print(f"  [动态分析] 更新后带参数端点: {param_count}")
+            print(f"  动态分析: {results.get('unique_endpoints', 0)} 端点")
             
-        except ImportError:
-            print(f"  [动态分析] dynamic_api_analyzer 不可用")
         except Exception as e:
-            print(f"  [动态分析] 失败: {e}")
+            print(f"  [WARN] Dynamic API Analyzer 失败: {e}")
+    
+    def _hook_apis(self):
+        """API Hook (api_interceptor) - 获取真实参数"""
+        if not self.ctx.playwright_available:
+            print("  [SKIP] Playwright 不可用，跳过 API Hook")
+            return
+        
+        try:
+            from core.api_interceptor import APIInterceptor
+            
+            print("  [API Hook] 启动...")
+            interceptor = APIInterceptor(self.target)
+            hook_results = interceptor.hook_all_apis()
+            
+            # 保存 Hook 结果到上下文
+            self.ctx.hooked_apis = hook_results.get('endpoints', [])
+            self.ctx.sensitive_apis = hook_results.get('sensitive', [])
+            self.ctx.test_vectors = hook_results.get('test_vectors', [])
+            
+            # 将 Hook 到的端点添加到上下文的端点列表
+            for hooked_ep in hook_results.get('endpoints', []):
+                path = hooked_ep.get('path', hooked_ep.get('url', ''))
+                if path and '/' in path:
+                    self.ctx.add_endpoints([{
+                        'path': path,
+                        'method': hooked_ep.get('method', 'GET'),
+                        'params': hooked_ep.get('params', {}),
+                        'source': f"hooked_{hooked_ep.get('source', 'unknown')}",
+                        'semantic_type': hooked_ep.get('semantic', 'unknown'),
+                    }])
+            
+            print(f"  API Hook: {len(self.ctx.hooked_apis)} 个 API 调用")
+            print(f"  敏感操作: {len(self.ctx.sensitive_apis)} 个")
+            print(f"  测试向量: {len(self.ctx.test_vectors)} 个")
+            
+        except Exception as e:
+            print(f"  [WARN] API Hook 失败: {e}")
+    
+    def _probe_parent_paths(self):
+        """父路径探测"""
+        try:
+            from core.api_parser import APIEndpointParser
+            
+            parser = APIEndpointParser(self.target, self.session)
+            parser.discover_js_files()
+            
+            self.ctx.parent_paths = parser.probe_parent_paths()
+            print(f"  父路径: {len(self.ctx.parent_paths)} 个")
+            
+        except Exception as e:
+            print(f"  [WARN] 父路径探测失败: {e}")
     
     def _fallback_js_analysis(self):
         """回退到 V35JSAnalyzer"""
@@ -786,110 +858,95 @@ def run_skill(target: str) -> Dict:
     """
     执行完整的 SKILL.md 测试流程
     
-    Args:
-        target: 目标 URL
-    
-    Returns:
-        测试结果字典
+    使用 TestContext 在模块间共享数据，实现模块联动
     """
     print("=" * 70)
     print("  API Security Testing Skill")
     print("=" * 70)
     print()
     
-    results = {
-        'target': target,
-        'timestamp': datetime.now().isoformat(),
-        'endpoints': [],
-        'vulnerabilities': [],
-        'cloud_findings': [],
-        'tech_stack': {},
-    }
-    
-    # 导入 requests
-    import requests
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    })
+    # 创建测试上下文
+    ctx = TestContext(target=target)
     
     # 阶段 0: 前置检查
-    if not PrerequisiteChecker.check():
+    if not PrerequisiteChecker.check(ctx):
         print("[FATAL] 前置检查失败")
-        results['error'] = '前置检查失败'
-        return results
+        return {'error': '前置检查失败', 'target': target}
     
     start_time = time.time()
     
-    # 阶段 1: 资产发现
-    discovery = AssetDiscovery(target, session)
-    disc_results = discovery.run()
-    results['endpoints'] = disc_results['endpoints']
-    results['tech_stack'] = disc_results['tech_stack']
-    results['parent_paths'] = disc_results.get('parent_paths', {})
+    # 阶段 1: 资产发现 (联动)
+    discovery = AssetDiscovery(ctx)
+    discovery.run()
     
     # 阶段 2: 漏洞分析
-    tester = VulnerabilityTester(target, session, results['endpoints'])
-    results['vulnerabilities'] = tester.run()
+    print("[2] 漏洞分析")
+    print("-" * 70)
+    tester = VulnerabilityTester(ctx)
+    tester.run()
     
-    # 阶段 2.5: Fuzzing (增强版)
+    # 阶段 2.5: Fuzzing
     print("[2.5] API Fuzzing")
     print("-" * 70)
-    try:
-        from core.api_parser import APIEndpointParser, APIFuzzer, ParsedEndpoint, APIParam, ParamType, ParamLocation
-        
-        # 转换端点格式
-        parsed_eps = []
-        for ep_data in results['endpoints']:
-            ep = ParsedEndpoint(
-                path=ep_data['path'],
-                method=ep_data.get('method', 'GET'),
-                source=ep_data.get('source', ''),
-                semantic_type=ep_data.get('semantic_type', ''),
-            )
-            for p in ep_data.get('params', []):
-                ep.params.append(APIParam(
-                    name=p['name'],
-                    param_type=ParamType(p.get('type', 'path')),
-                    location=ParamLocation.URL,
-                    required=p.get('required', True)
-                ))
-            parsed_eps.append(ep)
-        
-        # 执行 fuzzing
-        fuzzer = APIFuzzer(target, session)
-        fuzz_results = fuzzer.fuzz_endpoints(parsed_eps, results.get('parent_paths', {}))
-        
-        # 合并 fuzzing 结果
-        results['vulnerabilities'].extend(fuzz_results)
-        print(f"  [Fuzzing] 发现 {len(fuzz_results)} 个问题")
-        
-    except Exception as e:
-        print(f"  [WARN] Fuzzing 失败: {e}")
-    print()
+    _run_fuzzing(ctx)
     
     # 阶段 3: 云存储测试
-    cloud_tester = CloudStorageTester(target, session)
-    results['cloud_findings'] = cloud_tester.run()
+    print("[3] 云存储测试")
+    print("-" * 70)
+    cloud_tester = CloudStorageTester(ctx.target, ctx.session)
+    ctx.cloud_findings = cloud_tester.run()
     
-    results['duration'] = time.time() - start_time
+    # 更新上下文时间
+    ctx.duration = time.time() - start_time
     
     # 阶段 4: 报告生成
     print("[4] 生成报告")
     print("-" * 70)
     
-    report = ReportGenerator.generate(results)
+    report = ReportGenerator.generate_from_context(ctx)
     print(report)
     
-    # 保存报告
     report_file = f"security_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
     with open(report_file, 'w', encoding='utf-8') as f:
         f.write(report)
     
     print(f"\n报告已保存: {report_file}")
-    results['report_file'] = report_file
     
-    return results
+    return ctx.to_dict()
+
+
+def _run_fuzzing(ctx: TestContext):
+    """执行 Fuzzing（使用上下文）"""
+    try:
+        from core.api_parser import APIFuzzer, ParsedEndpoint, APIParam, ParamType, ParamLocation
+        
+        parsed_eps = []
+        for ep_data in ctx.get_all_endpoints():
+            ep = ParsedEndpoint(
+                path=ep_data.get('path', ''),
+                method=ep_data.get('method', 'GET'),
+                source=ep_data.get('source', ''),
+                semantic_type=ep_data.get('semantic_type', ''),
+            )
+            for p_name, p_val in ep_data.get('params', {}).items():
+                ep.params.append(APIParam(
+                    name=p_name,
+                    param_type=ParamType.QUERY,
+                    location=ParamLocation.URL,
+                    required=False,
+                ))
+            parsed_eps.append(ep)
+        
+        fuzzer = APIFuzzer(ctx.target, ctx.session)
+        fuzz_results = fuzzer.fuzz_endpoints(parsed_eps, ctx.parent_paths)
+        
+        for vuln in fuzz_results:
+            ctx.add_vulnerability(vuln)
+        
+        print(f"  [Fuzzing] 发现 {len(fuzz_results)} 个问题")
+        
+    except Exception as e:
+        print(f"  [WARN] Fuzzing 失败: {e}")
 
 
 if __name__ == "__main__":
