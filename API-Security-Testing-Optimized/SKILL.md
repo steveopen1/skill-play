@@ -301,6 +301,82 @@ else:
 
 ---
 
+## SKILL 执行器
+
+`core/skill_executor.py` 是 SKILL 的智能执行器，它会根据目标站点的特点动态决策执行流程。
+
+### 执行决策流程
+
+```
+1. 前置检查
+   └─ 检测 playwright / requests / 平替方案
+
+2. 静态分析
+   └─ 发现 JS 文件和端点
+
+3. 判断站点类型
+   ├─ 纯 HTML (无 JS)
+   ├─ jQuery SPA
+   ├─ 现代 SPA (Vue/React)
+   └─ 未知
+
+4. 父路径探测
+   └─ 检测 API 前缀 (/prod-api/, /api/, etc)
+
+5. 决策选择
+   ├─ 有真实 API?
+   │   ├─ 是 → 执行漏洞测试
+   │   └─ 否 → 报告 nginx fallback
+   │
+   ├─ SPA 站点?
+   │   └─ 是 → 执行动态分析
+   │
+   └─ 有真实 API + playwright?
+       └─ 是 → 执行 API Hook
+
+6. 执行测试
+   └─ 根据决策组合模块
+```
+
+### 使用方式
+
+```bash
+cd /workspace/skill-play/API-Security-Testing-Optimized
+
+# 使用智能执行器
+python3 -m core.skill_executor http://target.com
+
+# 或导入使用
+python3 -c "
+from core.skill_executor import SKILLExecutor
+result = SKILLExecutor('http://target.com').run()
+print(result)
+"
+```
+
+### 智能决策示例
+
+**目标**: `http://58.216.151.148:8972/do/mh/jtmhindex`
+
+```
+[决策] 判断站点类型
+  站点类型: 现代 SPA (基于 JS 文件)
+  
+[决策] 选择后续行动
+  - [执行] 动态分析 (SPA 站点)
+  - [执行] API Hook (有真实 API)
+  - [执行] 漏洞测试 (有真实 API)
+
+结果:
+  站点类型: modern_spa
+  静态端点: 40
+  动态端点: 2
+  JSON API: 28
+  漏洞: 0
+```
+
+---
+
 ## 模块能力池
 
 | 模块 | 能力 | 耗时 | 依赖 | 必须 |
