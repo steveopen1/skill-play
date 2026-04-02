@@ -335,14 +335,15 @@ else:
     print(result.stderr[:300] if result.stderr else 'Unknown error')
     sys.exit(1)
 "
-    if [ $? -eq 0 ]; then
+    RETEST_RESULT=$?
+    if [ $RETEST_RESULT -eq 0 ]; then
         BROWSER_FIXED=true
     fi
 elif [ $INSTALL_STATUS -eq 0 ]; then
     BROWSER_FIXED=true
 fi
 
-if $BROWSER_FIXED; then
+if [ "$BROWSER_FIXED" = "true" ]; then
     BROWSER_CAPABILITY="playwright"
     AVAILABLE_BROWSERS="$AVAILABLE_BROWSERS playwright"
 fi
