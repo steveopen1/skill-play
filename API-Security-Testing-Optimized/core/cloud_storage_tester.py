@@ -311,8 +311,11 @@ class CloudStorageTester:
         
         # 3. 检查状态码和内容的特定组合
         if resp.status_code == 200:
-            if '<!' in resp.text or '<?xml' in resp.text:
-                return 'unknown_bucket', "XML content"
+            # 必须是真正的 XML，不是 HTML
+            ct = resp.headers.get('Content-Type', '')
+            if 'xml' in ct.lower() or resp.text.strip().startswith('<?xml'):
+                if '<!' in resp.text and '<' not in resp.text[:50].replace('<!', '').replace('-->', ''):
+                    return 'unknown_bucket', "XML content"
         
         if resp.status_code == 403:
             if 'AccessDenied' in resp.text:
