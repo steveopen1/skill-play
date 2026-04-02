@@ -81,22 +81,25 @@ python3 -m core.runner <target> [选项]
 
 ## 核心模块能力
 
-| 模块 | 功能 | 关键能力 |
-|------|------|---------|
-| **core.runner** | SKILL.md 可执行入口 | 整合各模块，协调测试流程 |
-| **core.api_parser** | 增强版 API 解析 | 正则+RESTful 参数推断，167+ 模式 |
-| **core.dynamic_api_analyzer** | 动态 API 分析 | Playwright 网络请求捕获，交互触发 |
-| **core.api_interceptor** | API Hook | 浏览器内 Hook fetch/XHR/axios，实时参数获取 |
-| **core.V35JSAnalyzer** | V35 JS 分析 | 从 JS 文件提取 API 端点 |
-| **core.browser_tester** | 浏览器测试 | DOM XSS、SPA 路由、表单交互 |
-| **core.cloud_storage_tester** | 云存储测试 | OSS/COS/S3/MinIO 漏洞检测 |
-| **core.fuzzer** | 模糊测试 | SQL注入、XSS、路径遍历 |
+所有模块位于 `core/` 目录下。
+
+| 模块文件 | 功能 | 导入方式 |
+|---------|------|---------|
+| `core/runner.py` | SKILL.md 可执行入口 | `from core.runner import run_skill` |
+| `core/api_parser.py` | 增强版 API 解析 | `from core.api_parser import APIEndpointParser` |
+| `core/dynamic_api_analyzer.py` | 动态 API 分析 | `from core.dynamic_api_analyzer import DynamicAPIAnalyzer` |
+| `core/api_interceptor.py` | API Hook | `from core.api_interceptor import APIInterceptor` |
+| `core/deep_api_tester_v55.py` | V55 JS 分析器 | `from core.deep_api_tester_v55 import DeepAPITesterV55` |
+| `core/browser_tester.py` | 浏览器测试 | `from core.browser_tester import BrowserAutomationTester` |
+| `core/cloud_storage_tester.py` | 云存储测试 | `from core.cloud_storage_tester import CloudStorageTester` |
+| `core/api_fuzzer.py` | 模糊测试 | `from core.api_fuzzer import APIfuzzer` |
+| `core/orchestrator.py` | 智能编排器 | `from core.orchestrator import EnhancedAgenticOrchestrator` |
 
 ---
 
 ## 端点发现能力
 
-### 1. 静态分析 (core.api_parser)
+### 1. 静态分析 (`core.api_parser`)
 
 从 JS 文件中使用正则和 AST 模式匹配提取 API 端点：
 
@@ -119,7 +122,7 @@ endpoints = parser.parse_js_files(js_files)
 - RESTful 推断: `/users/123` → `id=123`
 - 查询参数: `?page=1&limit=10`
 
-### 2. 动态分析 (core.dynamic_api_analyzer)
+### 2. 动态分析 (`core.dynamic_api_analyzer`)
 
 使用 Playwright 访问页面并捕获网络请求：
 
@@ -137,7 +140,7 @@ results = analyzer.analyze_full()
 - 请求来源 (fetch/axios/xhr)
 - 触发操作 (登录/搜索/导航)
 
-### 3. API Hook (core.api_interceptor)
+### 3. API Hook (`core.api_interceptor`)
 
 在浏览器中注入 JavaScript Hook真实的 API 调用，获取**调用时的真实参数**：
 
@@ -157,7 +160,14 @@ results = interceptor.hook_all_apis()
 - 响应状态码
 - 敏感操作识别
 
-### 4. V35JSAnalyzer (legacy)
+### 4. V55 JS 分析器 (`core.deep_api_tester_v55`)
+
+```python
+from core.deep_api_tester_v55 import DeepAPITesterV55
+
+tester = DeepAPITesterV55(target=target, headless=True)
+tester.run_test()
+```
 
 原始的 V35 版本 JS 分析器，作为回退方案：
 
@@ -176,18 +186,19 @@ result = analyzer.analyze_js(js_url)
 
 ```
 阶段 0: 前置检查
-    └── 检查/修复 playwright, requests
+    └── PrerequisiteChecker (自动检查/修复 playwright, requests)
 
 阶段 1: 资产发现
     ├── 1.1 静态分析 (core.api_parser)
-    │       └── 正则 + RESTful 参数推断
+    │       └── APIEndpointParser - 正则 + RESTful 参数推断
     ├── 1.2 动态分析 (core.dynamic_api_analyzer)
-    │       └── Playwright 网络请求捕获
+    │       └── DynamicAPIAnalyzer - Playwright 网络请求捕获
     ├── 1.3 API Hook (core.api_interceptor)
-    │       └── 实时参数获取
+    │       └── APIInterceptor - 实时参数获取
     └── 1.4 父路径探测
+            └── APIEndpointParser.probe_parent_paths()
 
-阶段 2: 漏洞分析
+阶段 2: 漏洞分析 (core.runner.VulnerabilityTester)
     ├── 2.1 SQL 注入测试
     ├── 2.2 XSS 测试
     ├── 2.3 路径遍历测试
@@ -195,13 +206,13 @@ result = analyzer.analyze_js(js_url)
     ├── 2.5 认证绕过
     └── 2.6 GraphQL/IDOR/暴力破解
 
-阶段 2.5: API Fuzzing
-    └── 使用 fuzzing 引擎测试端点
+阶段 2.5: API Fuzzing (core.api_fuzzer)
+    └── APIFuzzer - fuzz_endpoints()
 
-阶段 3: 云存储安全测试
-    └── OSS/COS/S3/MinIO 特征检测
+阶段 3: 云存储安全测试 (core.cloud_storage_tester)
+    └── CloudStorageTester - test_current_domain_storage()
 
-阶段 4: 报告生成
+阶段 4: 报告生成 (core.runner.ReportGenerator)
     └── Markdown 格式报告
 ```
 
