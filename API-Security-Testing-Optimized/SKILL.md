@@ -83,16 +83,176 @@ python3 -m core.runner <target> [选项]
 
 | 模块 | 功能 | 关键能力 |
 |------|------|---------|
-| **orchestrator** | 智能编排器 | 协调各模块，按阶段执行测试 |
-| **V35JSAnalyzer** | JS 分析 | 从 JS 文件提取 API 端点 (167+ 模式) |
-| **browser_tester** | 浏览器测试 | DOM XSS、SPA 路由、表单交互 |
-| **cloud_storage_tester** | 云存储测试 | OSS/COS/S3/MinIO 漏洞检测 |
-| **api_fuzzer** | 模糊测试 | SQL注入、XSS、路径遍历 |
-| **advanced_recon** | 高级侦察 | 被动探测、指纹识别 |
+| **core.runner** | SKILL.md 可执行入口 | 整合各模块，协调测试流程 |
+| **core.api_parser** | 增强版 API 解析 | 正则+RESTful 参数推断，167+ 模式 |
+| **core.dynamic_api_analyzer** | 动态 API 分析 | Playwright 网络请求捕获，交互触发 |
+| **core.api_interceptor** | API Hook | 浏览器内 Hook fetch/XHR/axios，实时参数获取 |
+| **core.V35JSAnalyzer** | V35 JS 分析 | 从 JS 文件提取 API 端点 |
+| **core.browser_tester** | 浏览器测试 | DOM XSS、SPA 路由、表单交互 |
+| **core.cloud_storage_tester** | 云存储测试 | OSS/COS/S3/MinIO 漏洞检测 |
+| **core.fuzzer** | 模糊测试 | SQL注入、XSS、路径遍历 |
 
 ---
 
-## 端点发现能力整合
+## 端点发现能力
+
+### 1. 静态分析 (core.api_parser)
+
+从 JS 文件中使用正则和 AST 模式匹配提取 API 端点：
+
+```python
+from core.api_parser import APIEndpointParser
+
+parser = APIEndpointParser(target, session)
+js_files = parser.discover_js_files()
+endpoints = parser.parse_js_files(js_files)
+```
+
+**支持的正则模式:**
+- `axios.get/post/put/delete('/api/users')` - axios 调用
+- `fetch('/api/users')` - fetch 调用
+- `/api/v1/users/{id}` - RESTful 路径
+- `/users/:id` - 冒号参数
+
+**参数提取:**
+- 路径参数: `{id}`, `:id`
+- RESTful 推断: `/users/123` → `id=123`
+- 查询参数: `?page=1&limit=10`
+
+### 2. 动态分析 (core.dynamic_api_analyzer)
+
+使用 Playwright 访问页面并捕获网络请求：
+
+```python
+from core.dynamic_api_analyzer import DynamicAPIAnalyzer
+
+analyzer = DynamicAPIAnalyzer(target)
+results = analyzer.analyze_full()
+# results['endpoints'] - 发现的所有端点
+# results['requests'] - 原始请求列表
+```
+
+**捕获内容:**
+- URL、方法、查询参数
+- 请求来源 (fetch/axios/xhr)
+- 触发操作 (登录/搜索/导航)
+
+### 3. API Hook (core.api_interceptor)
+
+在浏览器中注入 JavaScript Hook真实的 API 调用，获取**调用时的真实参数**：
+
+```python
+from core.api_interceptor import APIInterceptor
+
+interceptor = APIInterceptor(target)
+results = interceptor.hook_all_apis()
+# results['sensitive'] - 敏感操作 (password, auth, etc.)
+# results['testable'] - 可测试操作
+# results['test_vectors'] - 安全测试向量
+```
+
+**Hook 内容:**
+- fetch/XHR/axios 拦截
+- 请求 URL、方法、参数
+- 响应状态码
+- 敏感操作识别
+
+### 4. V35JSAnalyzer (legacy)
+
+原始的 V35 版本 JS 分析器，作为回退方案：
+
+```python
+from core.deep_api_tester_v55 import V35JSAnalyzer
+
+analyzer = V35JSAnalyzer(target, session)
+result = analyzer.analyze_js(js_url)
+# result['endpoints'] - 端点列表
+# result['secrets'] - 敏感信息
+```
+
+---
+
+## 测试流程
+
+```
+阶段 0: 前置检查
+    └── 检查/修复 playwright, requests
+
+阶段 1: 资产发现
+    ├── 1.1 静态分析 (core.api_parser)
+    │       └── 正则 + RESTful 参数推断
+    ├── 1.2 动态分析 (core.dynamic_api_analyzer)
+    │       └── Playwright 网络请求捕获
+    ├── 1.3 API Hook (core.api_interceptor)
+    │       └── 实时参数获取
+    └── 1.4 父路径探测
+
+阶段 2: 漏洞分析
+    ├── 2.1 SQL 注入测试
+    ├── 2.2 XSS 测试
+    ├── 2.3 路径遍历测试
+    ├── 2.4 敏感信息泄露
+    ├── 2.5 认证绕过
+    └── 2.6 GraphQL/IDOR/暴力破解
+
+阶段 2.5: API Fuzzing
+    └── 使用 fuzzing 引擎测试端点
+
+阶段 3: 云存储安全测试
+    └── OSS/COS/S3/MinIO 特征检测
+
+阶段 4: 报告生成
+    └── Markdown 格式报告
+```
+
+---
+
+## 安全问题检测
+
+### Backend API Unreachable / nginx fallback
+
+**问题**: 所有 API 路径返回 HTML 而不是 JSON API
+
+**可能原因**:
+1. 后端 API 服务未运行 (端口不可达)
+2. nginx 未正确配置 API 路径代理
+3. API 服务部署在不同的服务器/端口
+
+**影响**: 前端无法连接后端 API，系统功能不可用
+
+**建议**:
+1. 检查后端服务是否运行
+2. 检查 nginx proxy_pass 配置
+3. 检查防火墙/安全组规则
+
+### 敏感操作识别
+
+API Hook 自动识别以下敏感操作：
+
+| 操作类型 | 关键词 | 安全风险 |
+|---------|--------|---------|
+| password_reset | reset, forgot, recovery | 任意密码重置 |
+| auth_login | login, logout, token | 暴力破解 |
+| user_operations | user, profile, account | 权限绕过 |
+| admin_operations | admin, manage, system | 垂直权限 |
+| payment | pay, order, transaction | 金融欺诈 |
+
+---
+
+## 快速执行
+
+```bash
+cd /workspace/skill-play/API-Security-Testing-Optimized
+
+# 标准测试
+python3 -m core.runner http://target.com
+
+# 只做 API Hook
+python3 -c "from core.api_interceptor import run_api_hook; run_api_hook('http://target.com')"
+
+# 只做动态分析
+python3 -c "from core.dynamic_api_analyzer import run_full_analysis; run_full_analysis('http://target.com')"
+```
 
 **问题**: 原 orchestrator 的端点发现能力较弱
 
