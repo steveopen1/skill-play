@@ -516,6 +516,130 @@ token泄露 → 用token访问敏感接口 → 越权操作
 - GET /api/user/info 返回JSON = 真实API
 ```
 
+### SPA应用完整采集流程（必须按顺序执行）
+
+**阶段1：基础探测**
+```
+1. HTTP探测目标可访问性
+   curl -I http://target.com
+   
+2. 技术栈识别
+   - 检查响应头Server字段
+   - 检查HTML中是否包含Vue/React/Angular关键词
+   - 检查是否包含webpack chunk引用
+   
+3. 判断是否是SPA应用
+   - /api/* 返回HTML → SPA
+   - HTML包含JS chunk路径 → Vue/React应用
+```
+
+**阶段2：JS采集（必须使用无头浏览器）**
+```
+1. 使用Playwright访问目标
+   from playwright.sync_api import sync_playwright
+   
+   with sync_playwright() as p:
+       browser = p.chromium.launch(headless=True)
+       page = browser.new_page()
+       page.goto(url, wait_until="networkidle")
+       page.wait_for_timeout(5000)  # 等待JS完全执行
+       
+2. 从DOM提取所有JS文件
+   js_files = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', page.content())
+   
+3. 下载并分析每个JS文件
+   - app.js (主应用)
+   - chunk-vendors.js (第三方库)
+   - chunk-*.js (业务模块)
+```
+
+**阶段3：JS深度分析（AST/正则提取）**
+```
+1. 提取baseURL配置（关键！）
+   patterns:
+   - r'baseURL\s*[:=]\s*["\']([^"\']+)["\']'
+   - r'axios\.create\s*\(\s*\{([^}]+)\}'
+   
+   重要发现：
+   - baseURL:"" 为空 → 使用相对路径 + nginx代理
+   - baseURL:"https://api.xxx.com" → 使用配置的域名前缀
+
+2. 提取API端点路径
+   patterns:
+   - r'["\'](/(?:user|auth|admin|login|logout|api|v\d|frame)[^"\']*)["\']'
+   - r'axios\.[a-z]+\(["\']([^"\']+)["\']'
+   - r'fetch\(["\']([^"\']+)["\']'
+   
+3. 提取环境变量配置
+   patterns:
+   - r'VUE_APP_\w+'
+   - r'process\.env\.(\w+)'
+   
+4. 提取URL模板字符串
+   patterns:
+   - r'`[^`]*(?:api|user|auth|admin)[^`]*`'
+```
+
+**阶段4：API测试**
+```
+1. 逐个测试发现的API端点
+   - GET请求：检查Content-Type和响应内容
+   - POST请求：测试登录接口（SQL注入/XSS）
+   
+2. 判断响应类型
+   - application/json → 真实API
+   - text/html → SPA路由或WAF拦截
+   
+3. 记录认证要求
+   - 401/403 → 需要认证（正常）
+   - 200 + JSON → 检查是否未授权
+```
+
+**阶段5：漏洞验证（10维度）**
+```
+□ 维度1: 响应类型 - 是JSON还是HTML？
+□ 维度2: 状态码 - 是否合理？
+□ 维度3: 响应长度 - 是否过短？
+□ 维度4: WAF拦截 - 是否为WAF？
+□ 维度5: 敏感信息 - 是否包含password/token？
+□ 维度6: 一致性 - 多次请求是否一致？
+□ 维度7: SQL注入 - 是否包含SQL错误？
+□ 维度8: IDOR - 是否返回用户数据？
+□ 维度9: 认证绕过 - 是否返回token？
+□ 维度10: 信息泄露 - 是否泄露非公开信息？
+```
+
+### SPA采集流程检查清单
+
+```
+□ 阶段1: 基础探测
+   □ 目标可访问
+   □ 技术栈识别完成
+   □ 判断为SPA应用
+
+□ 阶段2: JS采集
+   □ Playwright无头浏览器启动
+   □ wait_until="networkidle"
+   □ 额外等待3-5秒
+   □ 获取所有JS文件列表
+
+□ 阶段3: JS分析
+   □ 提取baseURL配置
+   □ 提取所有API路径
+   □ 提取环境变量
+   □ 提取URL模板
+
+□ 阶段4: API测试
+   □ 逐个测试API端点
+   □ 区分JSON/HTML响应
+   □ 测试POST登录接口
+
+□ 阶段5: 漏洞验证
+   □ 10维度验证
+   □ 排除SPA路由误报
+   □ 确认或排除漏洞
+```
+
 ### 遇到加密/混淆的数据时
 
 ```
@@ -580,27 +704,88 @@ core/                              # 核心能力池（原子化）
 
 ### 能力池模块参考
 
-| 阶段 | 可用模块 | 路径 | 何时使用 |
-|------|----------|------|----------|
-| 发现 | `advanced_recon.py` | `core/advanced_recon.py` | Swagger/子域名枚举 |
-| 发现 | `api_parser.py` | `core/api_parser.py` | JS解析 |
-| 发现 | `dynamic_api_analyzer.py` | `core/dynamic_api_analyzer.py` | SPA应用 |
-| 发现 | `http_client.py` | `core/collectors/http_client.py` | 快速探测 |
-| 发现 | `js_parser.py` | `core/collectors/js_parser.py` | 从JS提取API |
-| 发现 | `browser_collect.py` | `core/collectors/browser_collect.py` | 无头浏览器采集 |
-| 分析 | `response_analyzer.py` | `core/analyzers/response_analyzer.py` | 响应类型识别/验证 |
-| 分析 | `sensitive_finder.py` | `core/analyzers/sensitive_finder.py` | 敏感信息发现 |
-| 测试 | `api_fuzzer.py` | `core/api_fuzzer.py` | 模糊测试 |
-| 测试 | `sqli_tester.py` | `core/testers/sqli_tester.py` | SQL注入测试 |
-| 测试 | `idor_tester.py` | `core/testers/idor_tester.py` | 越权测试 |
-| 测试 | `auth_tester.py` | `core/testers/auth_tester.py` | 认证绕过测试 |
-| 测试 | `jwt_tester.py` | `core/testers/jwt_tester.py` | JWT测试 |
-| 测试 | `deep_api_tester_v35.py` | `core/deep_api_tester_v35.py` | 深度测试 |
-| 测试 | `testing_loop.py` | `core/testing_loop.py` | 循环测试 |
-| 验证 | `vuln_verifier.py` | `core/verifiers/vuln_verifier.py` | 漏洞验证(10维度) |
-| 验证 | `response_diff.py` | `core/verifiers/response_diff.py` | 响应对比 |
-| 辅助 | `prerequisite.py` | `core/utils/prerequisite.py` | 依赖检查 |
-| 辅助 | `cloud_storage_tester.py` | `core/cloud_storage_tester.py` | 云存储 |
+| 阶段 | 可用模块 | 路径 | 何时使用 | 必须使用 |
+|------|----------|------|----------|----------|
+| 发现 | `browser_collect.py` | `core/collectors/browser_collect.py` | SPA应用必须使用 | ✅ SPA必用 |
+| 发现 | `http_client.py` | `core/collectors/http_client.py` | 快速探测 | |
+| 发现 | `js_parser.py` | `core/collectors/js_parser.py` | 从JS提取API | ✅ |
+| 分析 | `api_parser.py` | `core/analyzers/api_parser.py` | 解析API端点 | ✅ |
+| 分析 | `response_analyzer.py` | `core/analyzers/response_analyzer.py` | 响应类型识别 | ✅ |
+| 分析 | `sensitive_finder.py` | `core/analyzers/sensitive_finder.py` | 敏感信息发现 | |
+| 测试 | `sqli_tester.py` | `core/testers/sqli_tester.py` | SQL注入测试 | |
+| 测试 | `idor_tester.py` | `core/testers/idor_tester.py` | 越权测试 | |
+| 测试 | `auth_tester.py` | `core/testers/auth_tester.py` | 认证测试 | |
+| 测试 | `jwt_tester.py` | `core/testers/jwt_tester.py` | JWT测试 | |
+| 测试 | `fuzz_tester.py` | `core/testers/fuzz_tester.py` | 模糊测试 | |
+| 验证 | `vuln_verifier.py` | `core/verifiers/vuln_verifier.py` | 漏洞验证(10维度) | ✅ |
+| 辅助 | `prerequisite.py` | `core/utils/prerequisite.py` | 依赖检查 | ✅ |
+
+### SPA应用采集流程（必须遵循）
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段1: 基础探测                                              │
+├─────────────────────────────────────────────────────────────┤
+│ 1. HTTP探测: curl -I http://target.com                      │
+│ 2. 技术栈: 检查HTML中Vue/React/Angular标识                   │
+│ 3. 判断SPA: /api/* 返回HTML → SPA应用                        │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段2: JS采集（必须使用Playwright）                          │
+├─────────────────────────────────────────────────────────────┤
+│ 1. 启动浏览器: sync_playwright()                             │
+│ 2. 访问目标: page.goto(url, wait_until="networkidle")       │
+│ 3. 等待加载: page.wait_for_timeout(5000)                    │
+│ 4. 提取JS: re.findall(r'<script[^>]+src=["\']([^"\']+)')   │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段3: JS深度分析（必须分析每个JS文件）                       │
+├─────────────────────────────────────────────────────────────┤
+│ 1. baseURL配置:                                             │
+│    patterns:                                                │
+│    - r'baseURL\s*[:=]\s*["\']([^"\']+)["\']'               │
+│    - r'axios\.create\s*\(\s*\{([^}]+)\}'                   │
+│    关键发现: baseURL:"" 为空 → 相对路径                      │
+│                                                              │
+│ 2. API路径:                                                 │
+│    patterns:                                                │
+│    - r'["\'](/(?:user|auth|admin|login)[^"\']*)["\']'       │
+│    - r'axios\.[a-z]+\(["\']([^"\']+)["\']'                 │
+│                                                              │
+│ 3. 环境变量:                                                 │
+│    patterns:                                                 │
+│    - r'VUE_APP_\w+'                                         │
+│    - r'process\.env\.(\w+)'                                 │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段4: API测试                                               │
+├─────────────────────────────────────────────────────────────┤
+│ 1. 逐个测试发现的API端点                                      │
+│ 2. GET: 检查Content-Type → JSON=真实API, HTML=SPA路由       │
+│ 3. POST: 测试登录接口 → SQL注入/XSS                         │
+│ 4. 记录: 401/403=需认证, 200+JSON=检查是否未授权             │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 阶段5: 漏洞验证（10维度）                                     │
+├─────────────────────────────────────────────────────────────┤
+│ □ 维度1: 响应类型    □ 维度2: 状态码     □ 维度3: 响应长度     │
+│ □ 维度4: WAF拦截    □ 维度5: 敏感信息    □ 维度6: 一致性      │
+│ □ 维度7: SQL注入     □ 维度8: IDOR        □ 维度9: 认证绕过   │
+│ □ 维度10: 信息泄露                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 关键配置发现对照表
+
+| baseURL值 | 含义 | 架构 |
+|-----------|------|------|
+| `""` (空) | 相对路径 | nginx反向代理到后端 |
+| `"https://api.xxx.com"` | 绝对路径 | 前端直接调用独立API |
+| 不存在 | 同源请求 | 后端在同一域名下 |
 
 ### 调用原则
 

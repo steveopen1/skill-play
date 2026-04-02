@@ -146,7 +146,26 @@ def extract_api_patterns(content):
         r'path\s*[:=]\s*["\']([^"\']+)["\']',
     ]
     
-    for pattern in patterns:
+    # 【重要】业务模块API模式 - 覆盖更多场景
+    business_patterns = [
+        # 用户认证类
+        r'["\'](/(?:user|auth|login|logout|oauth|supplement|userinfo)[a-zA-Z0-9_/?=&-]*)["\']',
+        # 框架管理类
+        r'["\'](/(?:frame|module|code|attach|file)[a-zA-Z0-9_/?=&-]*)["\']',
+        # Dashboard/统计类
+        r'["\'](/(?:dashboard|table|dash|board|stats|statistics)[a-zA-Z0-9_/?=&-]*)["\']',
+        # 微信相关
+        r'["\'](/(?:wx|wechat|wxapi|hszh)[a-zA-Z0-9_/?=&-]*)["\']',
+        # axios/fetch调用
+        r'axios\.[a-z]+\(["\']([^"\']+)["\']',
+        r'fetch\(["\']([^"\']+)["\']',
+        r'\.get\(["\']([^"\']+)["\']',
+        r'\.post\(["\']([^"\']+)["\']',
+        r'\.put\(["\']([^"\']+)["\']',
+        r'\.delete\(["\']([^"\']+)["\']',
+    ]
+    
+    for pattern in patterns + business_patterns:
         matches = re.findall(pattern, content, re.I)
         for match in matches:
             if isinstance(match, str):
@@ -186,8 +205,33 @@ def extract_tokens(content):
 
 def is_api_path(path):
     """判断是否是API路径"""
-    api_indicators = ['/api/', '/v1/', '/v2/', '/v3/', '/rest/']
-    return any(indicator in path.lower() for indicator in api_indicators)
+    if not path or len(path) < 2:
+        return False
+    
+    api_indicators = [
+        '/api/', '/v1/', '/v2/', '/v3/', '/rest/',
+        '/user', '/auth', '/login', '/logout', '/oauth',
+        '/frame', '/module', '/code', '/attach', '/file',
+        '/dashboard', '/table', '/supplement',
+        '/wx', '/wechat', '/hszh', '/api',
+    ]
+    
+    # 检查是否包含API指示符
+    for indicator in api_indicators:
+        if indicator in path.lower():
+            return True
+    
+    # 过滤掉明显不是API的路径
+    non_api_patterns = [
+        '.css', '.js', '.html', '.png', '.jpg', '.gif',
+        '/static/', '/public/', '/assets/', '/images/',
+        'chunk-', 'app.', 'vendor.',
+    ]
+    for pattern in non_api_patterns:
+        if pattern in path:
+            return False
+    
+    return False
 
 
 def resolve_js_url(js_url, base_url):
