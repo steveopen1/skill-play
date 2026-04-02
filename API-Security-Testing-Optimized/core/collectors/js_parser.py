@@ -630,3 +630,151 @@ def batch_prepare_js_for_agent(js_urls, base_url):
             prepared.append(result)
     
     return prepared
+
+
+def extract_oauth_credentials(js_content):
+    """
+    【新增】从JS内容中提取OAuth凭据
+    
+    用于检测前端JS中硬编码的OAuth client_id/client_secret
+    
+    输入:
+        js_content: string - JS文件内容
+    
+    输出:
+        {
+            client_id: string,
+            client_secret: string,
+            grant_type: string,
+            token_url: string
+        }
+    """
+    import re
+    
+    result = {
+        'client_id': None,
+        'client_secret': None,
+        'grant_type': None,
+        'token_url': None
+    }
+    
+    # 提取client_id
+    patterns = [
+        r'client_id[\s:\"]+([^\s\"\']+)',
+        r'clientId[\s:\"]+([^\s\"\']+)',
+        r'"client_id"\s*:\s*["\']([^"\']+)["\']',
+        r"'client_id'\s*:\s*[']([^']+)[']",
+    ]
+    for p in patterns:
+        match = re.search(p, js_content, re.I)
+        if match:
+            val = match.group(1)
+            if len(val) > 3 and 'undefined' not in val.lower():
+                result['client_id'] = val
+                break
+    
+    # 提取client_secret
+    patterns = [
+        r'client_secret[\s:\"]+([^\s\"\']+)',
+        r'clientSecret[\s:\"]+([^\s\"\']+)',
+        r'"client_secret"\s*:\s*["\']([^"\']+)["\']',
+        r"'client_secret'\s*:\s*[']([^']+)[']",
+    ]
+    for p in patterns:
+        match = re.search(p, js_content, re.I)
+        if match:
+            val = match.group(1)
+            if len(val) > 3 and 'undefined' not in val.lower():
+                result['client_secret'] = val
+                break
+    
+    # 提取grant_type
+    patterns = [
+        r'grant_type[\s:\"]+([^\s\"\']+)',
+        r'"grant_type"\s*:\s*["\']([^"\']+)["\']',
+    ]
+    for p in patterns:
+        match = re.search(p, js_content, re.I)
+        if match:
+            result['grant_type'] = match.group(1)
+            break
+    
+    # 提取token_url
+    patterns = [
+        r'[\"\'](/auth/oauth/token[^"\']*)["\']',
+        r'[\"\'](https?://[^\s\"\']+/oauth/token[^"\']*)["\']',
+        r'token[\sUrl]*[\":\s]+[\"\']([^\s\"\']+token[^\s\"\']*)["\']',
+    ]
+    for p in patterns:
+        match = re.search(p, js_content, re.I)
+        if match:
+            result['token_url'] = match.group(1)
+            break
+    
+    # 检查是否有实际值
+    if result['client_id'] or result['client_secret']:
+        return result
+    return None
+
+
+def extract_all_api_endpoints(js_content):
+    """
+    【新增】从JS内容中提取所有API端点
+    
+    输入:
+        js_content: string - JS文件内容
+    
+    输出:
+        api_endpoints: [{
+            path: string,
+            method: string,
+            params: []
+        }]
+    """
+    import re
+    
+    endpoints = []
+    
+    # axios模式
+    axios_patterns = [
+        r'axios\.(get|post|put|delete|patch)\(["\']([^"\']+)["\']',
+        r'\.(get|post|put|delete|patch)\(["\']([^"\']+)["\']',
+        r'fetch\(["\']([^"\']+)["\']',
+    ]
+    
+    for pattern in axios_patterns:
+        matches = re.findall(pattern, js_content, re.I)
+        for m in matches:
+            if len(m) == 2:
+                method = m[0].upper()
+                path = m[1]
+                endpoints.append({
+                    'path': path,
+                    'method': method,
+                    'source': 'axios_pattern'
+                })
+    
+    # URL配置模式
+    url_patterns = [
+        r'url\s*[:=]\s*["\']([^"\']+)["\']',
+        r'path\s*[:=]\s*["\']([^"\']+)["\']',
+        r'endpoint\s*[:=]\s*["\']([^"\']+)["\']',
+    ]
+    
+    for pattern in url_patterns:
+        matches = re.findall(pattern, js_content, re.I)
+        for m in matches:
+            if '/' in m and len(m) > 3:
+                endpoints.append({
+                    'path': m,
+                    'method': 'UNKNOWN',
+                    'source': 'url_pattern'
+                })
+    
+    # 去重
+    unique = {}
+    for ep in endpoints:
+        key = f"{ep['method']}:{ep['path']}"
+        if key not in unique:
+            unique[key] = ep
+    return list(unique.values())
