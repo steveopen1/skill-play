@@ -659,7 +659,9 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         target = sys.argv[1]
     else:
-        target = "http://114.220.238.206:9528/login?redirect=%2Fdashboard"
+        print("Usage: python skill_executor_v2.py <target_url>")
+        print("Example: python skill_executor_v2.py http://example.com")
+        sys.exit(1)
     
     executor = SKILLExecutorV2(target)
     result = executor.run()
