@@ -1,9 +1,9 @@
 """
 JS源码解析 - 从HTML/JS中提取API配置
 
-【重要】使用AST+正则双模式解析：
-- AST模式：使用esprima解析JS AST，提取所有字符串字面量
-- 正则模式：快速提取API路径、baseURL、凭证等
+【重要】使用多模式解析：
+1. 正则模式：快速提取API路径、baseURL、凭证等
+2. Agent模式：下载JS供Agent解析（用于混淆JS）
 
 输入: {html, js_urls, base_url}
 输出: {
@@ -14,7 +14,8 @@ JS源码解析 - 从HTML/JS中提取API配置
     sensitive_urls: 敏感URL,
     ip_addresses: IP地址,
     domains: 相关域名,
-    credentials: 发现的凭证
+    credentials: 发现的凭证,
+    js_for_agent: [JS文件路径列表，供Agent解析]
 }
 """
 
@@ -539,3 +540,93 @@ if __name__ == '__main__':
     })
     print(f"API Patterns: {result['api_patterns']}")
     print(f"Base URLs: {result['base_urls']}")
+
+
+def prepare_js_for_agent_analysis(js_url, base_url):
+    """
+    【新增】下载JS文件，准备供Agent解析
+    
+    用于混淆JS无法用esprima解析时，将JS内容提供给Agent/LLM进行解析
+    
+    输入:
+        js_url: string - JS文件URL
+        base_url: string - 基准URL
+    
+    输出:
+        {
+            js_url: JS文件路径,
+            js_content: JS原始内容（截断到20KB）,
+            content_hash: 内容哈希,
+            lines: 行数,
+            prompt_template: Agent解析提示模板
+        }
+    """
+    full_url = resolve_js_url(js_url, base_url) if not js_url.startswith('http') else js_url
+    
+    js_content = fetch_js_content(full_url)
+    
+    if not js_content:
+        return {
+            'error': f'Failed to fetch JS: {js_url}',
+            'js_url': js_url
+        }
+    
+    # 截断过长的JS（保留前20KB）
+    truncated = len(js_content) > 20000
+    display_content = js_content[:20000] if truncated else js_content
+    
+    prompt_template = f"""请分析以下JavaScript代码，提取API接口：
+
+1. baseURL/basePath配置
+2. 所有API路径（如 /user/login, /api/v1/user/info）
+3. 请求方法（GET/POST/PUT/DELETE）
+4. 参数名和参数位置（query/path/body）
+5. 敏感信息（token、apiKey、硬编码凭证）
+6. 外部URL或域名
+7. IP地址
+
+--- JS文件 ---
+{js_content[:5000]}...
+（共 {len(js_content)} 字符，已截断）
+
+请返回JSON格式：
+{{
+  "base_url": "发现的baseURL或空",
+  "api_paths": ["路径1", "路径2"],
+  "sensitive": ["敏感信息"],
+  "external_urls": ["外部URL"],
+  "ips": ["IP地址"]
+}}"""
+    
+    return {
+        'js_url': js_url,
+        'full_url': full_url,
+        'js_content': display_content,
+        'js_content_full': js_content if not truncated else None,
+        'content_hash': str(hash(js_content)),
+        'lines': len(js_content.split('\n')),
+        'truncated': truncated,
+        'agent_prompt': prompt_template if truncated else None,
+        'fetch_success': True
+    }
+
+
+def batch_prepare_js_for_agent(js_urls, base_url):
+    """
+    批量下载JS文件准备Agent分析
+    
+    输入:
+        js_urls: string[] - JS文件URL列表
+        base_url: string - 基准URL
+    
+    输出:
+        prepared: object[] - 准备好的JS列表
+    """
+    prepared = []
+    
+    for js_url in js_urls[:5]:  # 限制数量
+        result = prepare_js_for_agent_analysis(js_url, base_url)
+        if 'error' not in result:
+            prepared.append(result)
+    
+    return prepared

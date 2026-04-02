@@ -945,9 +945,8 @@ core/                              # 核心能力池（原子化）
 │                                                              │
 │ 2. API路径提取:                                              │
 │    → js_parser.py → extract_api_patterns() (正则)         │
-│    → js_parser.py → extract_with_ast() (AST)              │
-│    【重要】AST需要安装: pip install esprima                 │
-│    【重要】AST失败时提示安装/修复依赖，不降级                 │
+│    → js_parser.py → prepare_js_for_agent() (Agent解析)    │
+│    【重要】混淆JS无法AST时，准备内容供Agent解析              │
 │    参考: core/collectors/js_parser.py                         │
 │                                                              │
 │ 3. 敏感信息: sensitive_finder.py → 提取IP/域名/凭证        │
@@ -1132,8 +1131,9 @@ core/                              # 核心能力池（原子化）
 | **采集** | SPA应用发现API | `browser_collect.py` + `js_parser.py` | `core/collectors/` |
 | **采集** | 快速探测目标 | `http_client.py` | `core/collectors/http_client.py` |
 | **采集** | 自动交互触发API | `browser_collect.py` (interact=True) | `core/collectors/browser_collect.py` |
-| **采集** | JS采集（简单） | `js_collector.py` | `core/collectors/js_collector.py` |
-| **采集** | 浏览器采集（简单） | `browser_collector.py` | `core/collectors/browser_collector.py` |
+| **采集** | JS采集（混淆JS-Agent解析） | `js_parser.py` (prepare_js_for_agent) | `core/collectors/js_parser.py` |
+| **采集** | base_path多维度获取 | `base_path_dict.py` (get_base_path_multi_dimensional) | `core/utils/base_path_dict.py` |
+| **采集** | 登录即测 | `browser_collect.py` (analyze_login_requests) | `core/collectors/browser_collect.py` |
 | **采集** | URL批量采集 | `url_collector.py` | `core/collectors/url_collector.py` |
 | **采集** | API路径自动发现 | `api_path_finder.py` | `core/collectors/api_path_finder.py` |
 | **采集** | Swagger/子域名 | `advanced_recon.py` | `core/advanced_recon.py` |

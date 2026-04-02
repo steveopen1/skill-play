@@ -334,12 +334,76 @@ def browser_collect(config):
             # 采集API请求
             result['apis'] = captured_apis
             
+            # 【新增】登录即测：发现login请求时立即分析
+            login_test = analyze_login_requests(captured_apis, target)
+            if login_test:
+                result['login_test_hint'] = login_test
+            
             browser.close()
             
     except Exception as e:
         result['error'] = str(e)
     
     return result
+
+
+def analyze_login_requests(captured_apis, target_url):
+    """
+    【新增】分析捕获到的登录请求，返回测试提示
+    
+    发现login请求时，返回测试建议
+    """
+    login_keywords = ['login', 'signin', 'auth', 'token', 'pwd', 'password']
+    
+    for api in captured_apis:
+        url = api.get('url', '')
+        method = api.get('method', 'GET')
+        post_data = api.get('post_data', '')
+        
+        # 检查是否是登录相关请求
+        is_login = any(k in url.lower() for k in login_keywords)
+        if post_data and any(k in str(post_data).lower() for k in login_keywords):
+            is_login = True
+        
+        if is_login:
+            # 构建测试提示
+            test_hints = []
+            
+            # GET请求
+            if method == 'GET' and 'password' in url:
+                test_hints.append({
+                    'type': 'GET_login_with_password_in_url',
+                    'url': url,
+                    'risk': 'HIGH',
+                    'description': '密码可能暴露在URL中'
+                })
+            
+            # POST请求
+            if method == 'POST' and post_data:
+                test_hints.append({
+                    'type': 'POST_login_test',
+                    'url': url,
+                    'method': 'POST',
+                    'body': post_data,
+                    'risk': 'MEDIUM',
+                    'description': '立即测试SQL注入、弱密码'
+                })
+                
+                # SQL注入测试payload
+                sql_payloads = [
+                    {"username": "admin'--", "password": "any"},
+                    {"username": "admin' OR '1'='1", "password": "any"},
+                ]
+                test_hints[0]['sql_payloads'] = sql_payloads
+            
+            return {
+                'found_login': True,
+                'url': url,
+                'method': method,
+                'test_hints': test_hints
+            }
+    
+    return None
 
 
 def extract_urls_from_html(html_content, target_domain):
