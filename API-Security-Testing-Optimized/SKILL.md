@@ -487,6 +487,101 @@ refund → 需要订单 → 需要先有orderNo
 
 ---
 
+## 核心模块能力池 (core/)
+
+SKILL.md 是思维指导，core/ 是执行能力。大模型应该理解思维后，调用 core/ 中的模块执行。
+
+### 能力池模块
+
+| 模块 | 能力 | 何时使用 |
+|------|------|----------|
+| `advanced_recon.py` | Swagger/OpenAPI发现、WebSocket探测、子域名枚举、错误信息分析 | 发现阶段 |
+| `api_parser.py` | JS文件解析、API端点提取、父路径探测 | 发现阶段 |
+| `dynamic_api_analyzer.py` | Playwright动态分析、运行时API捕获 | SPA应用 |
+| `api_interceptor.py` | API请求拦截、参数提取、认证上下文 | 获取token/参数 |
+| `api_fuzzer.py` | 模糊测试、父路径Fuzz | 漏洞测试 |
+| `deep_api_tester.py` | 深度API测试 | 漏洞验证 |
+| `cloud_storage_tester.py` | 云存储检测 | 云存储漏洞 |
+| `browser_tester.py` | 浏览器自动化测试 | 复杂交互 |
+| `reasoning_engine.py` | 推理引擎 | 决策判断 |
+| `scan_engine.py` | 扫描编排 | 流程控制 |
+
+### 模块调用指导
+
+```
+发现阶段：
+  - advanced_recon.SwaggerDiscoverer() → 发现Swagger文档
+  - api_parser.APIEndpointParser() → 解析JS提取API
+  - dynamic_api_analyzer.DynamicAPIAnalyzer() → Playwright动态分析
+
+测试阶段：
+  - api_fuzzer.APIfuzzer() → 模糊测试
+  - deep_api_tester.DeepAPITester() → 深度测试
+  - api_interceptor.APIInterceptor() → 拦截真实请求参数
+
+验证阶段：
+  - cloud_storage_tester.CloudStorageTester() → 云存储检测
+  - browser_tester.BrowserTester() → 浏览器自动化验证
+```
+
+### 前置检查与依赖处理
+
+遇到 Playwright 不可用时，不要轻易回退！按以下顺序尝试：
+
+```
+1. prerequisite.check() → 检查环境
+2. playwright install chromium → 自动安装
+3. playwright install-deps → 安装系统依赖
+4. 降级方案: pyppeteer → selenium → requests
+5. MCP: headless_browser
+```
+
+### 核心调用示例
+
+```python
+# 前置检查
+from core.prerequisite import prerequisite_check
+available, browser_type = prerequisite_check()
+
+# Swagger发现
+from core.advanced_recon import SwaggerDiscoverer
+swagger = SwaggerDiscoverer()
+swagger.scan(target)
+
+# API解析
+from core.api_parser import APIEndpointParser
+parser = APIEndpointParser(target, session)
+endpoints = parser.parse_js_files(JS文件列表)
+
+# 动态分析
+from core.dynamic_api_analyzer import DynamicAPIAnalyzer
+analyzer = DynamicAPIAnalyzer(target)
+results = analyzer.analyze_full()
+
+# Fuzzing
+from core.api_fuzzer import APIfuzzer
+fuzzer = APIfuzzer(session)
+fuzzer.fuzz_paths(端点列表)
+
+# 云存储检测
+from core.cloud_storage_tester import CloudStorageTester
+tester = CloudStorageTester(target)
+findings = tester.full_test(target)
+```
+
+---
+
+## 核心模块能力池 (core/)
+
+遇到依赖问题时：
+```
+1. prerequisite.check() → 检查环境
+2. playwright install → 安装浏览器
+3. 降级方案：requests + BeautifulSoup
+```
+
+---
+
 ## 输出格式
 
 完成测试后，按以下格式报告：
