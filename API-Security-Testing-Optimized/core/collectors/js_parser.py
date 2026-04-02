@@ -154,7 +154,7 @@ def extract_with_ast(js_content):
     """
     使用AST（esprima）深度解析JS代码
     
-    【改进】添加简化fallback机制，AST失败时使用简化正则
+    【重要】需要先安装esprima: pip install esprima
     
     返回:
         {
@@ -163,13 +163,19 @@ def extract_with_ast(js_content):
             function_calls: 函数调用,
             import_sources: import来源
         }
+        
+    依赖:
+        pip install esprima
     """
-    # 【改进】先尝试简化正则提取，避免AST复杂报错
-    fallback_result = extract_simplified(js_content)
-    
     try:
         import esprima
-        
+    except ImportError:
+        return {
+            'error': 'esprima not installed. Run: pip install esprima',
+            'fix_command': 'pip install esprima'
+        }
+    
+    try:
         # 解析JS为AST（带位置信息）
         ast = esprima.parse(js_content, sourceType='script', range=True)
         
@@ -230,18 +236,13 @@ def extract_with_ast(js_content):
         result['function_calls'] = list(set(result['function_calls']))
         result['import_sources'] = list(set(result['import_sources']))
         
-        # 合并fallback结果
-        if fallback_result.get('api_paths'):
-            result['fallback_apis'] = fallback_result['api_paths']
-        
         return result
         
-    except ImportError:
-        # esprima未安装，使用fallback结果
-        return fallback_result
     except Exception as e:
-        # AST解析失败，使用fallback结果
-        fallback_result['ast_error'] = str(e)[:50]
+        return {
+            'error': f'AST parse failed: {str(e)[:100]}',
+            'fix_command': 'pip install --upgrade esprima'
+        }
         return fallback_result
 
 

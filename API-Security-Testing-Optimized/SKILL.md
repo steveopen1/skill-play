@@ -946,8 +946,8 @@ core/                              # 核心能力池（原子化）
 │ 2. API路径提取:                                              │
 │    → js_parser.py → extract_api_patterns() (正则)         │
 │    → js_parser.py → extract_with_ast() (AST)              │
-│    → js_parser.py → extract_simplified() (简化fallback)    │
-│    【重要】AST失败时自动使用简化正则fallback               │
+│    【重要】AST需要安装: pip install esprima                 │
+│    【重要】AST失败时提示安装/修复依赖，不降级                 │
 │    参考: core/collectors/js_parser.py                         │
 │                                                              │
 │ 3. 敏感信息: sensitive_finder.py → 提取IP/域名/凭证        │
