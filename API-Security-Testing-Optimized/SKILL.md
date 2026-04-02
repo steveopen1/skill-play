@@ -24,485 +24,469 @@ trigger:
 
 # API 安全测试 Skill
 
-> **核心定位**：推理式 API 安全测试框架
->
-> **设计理念**：
-> - 不硬编码具体接口，而是定义检测思路
-> - 从响应中学习，自动推断下一步测试
-> - 利用已发现的信息构造新请求
-> - 模拟攻击者的思维方式
+> **重要说明**：
+> 本 Skill 是大模型的"思维指导"，不是执行脚本。
+> 大模型应该理解检测思路，自己决定如何执行。
 
 ---
 
-## 核心推理引擎
+## 核心检测思维
 
-### 1. 响应推断引擎 (Response Inference)
+### 1. 遇到"查询类"接口时这么想
 
-```yaml
-response_inference:
-  name: "响应推断引擎"
-  
-  # 当响应包含敏感字段时，自动触发相关检测
-  sensitive_patterns:
-    - field: "password"
-      action: "标记为敏感接口，测试脱敏"
-    - field: "token"
-      action: "提取并尝试作为认证token"
-    - field: "userId" or "id"
-      action: "尝试构造IDOR请求"
-    - field: "phone"
-      action: "测试手机号相关接口"
-    - field: "orderNo" or "serialNumber"
-      action: "测试订单相关越权"
-    - field: "balance" or "amount"
-      action: "测试资金相关漏洞"
-      
-  # 当响应返回用户信息时
-  user_info_detected:
-    - "提取所有userId"
-    - "提取phone、email等标识符"
-    - "构造userId参数测试越权"
-    - "测试update/delete接口"
-    
-  # 当响应返回token时
-  token_detected:
-    - "提取token值"
-    - "添加到认证上下文"
-    - "使用token测试受保护接口"
+当你发现一个接口用于查询数据时：
+
+```
+思考：这个接口查的是什么数据？需要认证吗？能查到别人的数据吗？
 ```
 
-### 2. 参数推理引擎 (Parameter Inference)
+**推理步骤：**
+1. 这个接口查询需要什么参数？（userId、phone、orderNo...）
+2. 不带参数能查到数据吗？
+3. 带别人的ID能查到数据吗？（IDOR）
+4. 响应中有没有敏感字段？（password、token、余额...）
 
-```yaml
-parameter_inference:
-  name: "参数推理引擎"
-  
-  # 从已发现接口推断参数
-  common_params:
-    user_identifiers:
-      - "userId"
-      - "uid"
-      - "id"
-      - "user_id"
-      - "username"
-      
-    order_identifiers:
-      - "orderNo"
-      - "order_id"
-      - "serialNumber"
-      - "tradeNo"
-      
-    auth_identifiers:
-      - "token"
-      - "sessionId"
-      - "Authorization"
-      - "ticket"
-      
-  # 参数穷举策略
-  param_enumeration:
-    numeric:
-      - "1,2,3,10,100,1000..."
-      - "范围: 1-10000"
-      
-    string:
-      - "admin"
-      - "test"
-      - "null"
-      - "undefined"
-      
-    special:
-      - "' OR '1'='1"
-      - "<script>alert(1)</script>"
-      - "../../../etc/passwd"
+**示例：**
+```
+你发现：GET /api/user/info?userId=123
+思考：
+  - 需要认证吗？→ 测试不带token
+  - 能查其他用户吗？→ 测试userId=124
+  - 响应有敏感字段吗？→ 检查password、token等
 ```
 
-### 3. 认证上下文引擎 (Auth Context Engine)
+### 2. 遇到"认证类"接口时这么想
 
-```yaml
-auth_context:
-  name: "认证上下文传递"
-  
-  # 认证类型检测
-  auth_types:
-    - type: "Bearer Token"
-      header: "Authorization: Bearer {token}"
-      sources:
-        - "响应中的token字段"
-        - "X-Access-Token头"
-        - "localStorage/sessionStorage"
-        
-    - type: "JWT"
-      header: "Authorization: Bearer {jwt}"
-      inference: "JWT格式识别 (header.payload.signature)"
-      
-    - type: "Session Cookie"
-      header: "Cookie: JSESSIONID={sid}"
-      
-    - type: "API Key"
-      header: "X-API-Key: {key}"
-      
-  # 认证状态传递
-  context_propagation:
-    when:
-      - "发现登录接口"
-      - "响应包含token"
-      - "发现用户相关接口"
-    then:
-      - "提取认证信息"
-      - "添加到后续请求"
-      - "测试受保护资源"
+当你发现登录、注册接口时：
+
+```
+思考：认证机制安全吗？能绕过吗？能枚举用户吗？
 ```
 
-### 4. 业务逻辑推理 (Business Logic Inference)
+**推理步骤：**
+1. 不带认证信息能访问吗？
+2. 伪造token能通过吗？（JWTalg:none）
+3. 用户不存在时的响应有区别吗？（用户枚举）
+4. 有短信验证码吗？能轰炸吗？
 
-```yaml
-business_logic_inference:
-  name: "业务逻辑推理"
-  
-  # 从接口路径推断业务
-  path_patterns:
-    "/login":
-      - "测试认证绕过"
-      - "测试暴力破解"
-      - "测试SQL注入"
-      
-    "/user":
-      - "测试用户信息泄露"
-      - "测试IDOR"
-      - "测试越权修改"
-      - "测试批量用户枚举"
-      
-    "/order":
-      - "测试订单遍历"
-      - "测试订单详情泄露"
-      - "测试退款接口"
-      
-    "/pay" or "/refund":
-      - "测试支付篡改"
-      - "测试退款绕过"
-      - "测试0元支付"
-      
-    "/register" or "/signup":
-      - "测试任意注册"
-      - "测试短信轰炸"
-      - "测试默认密码"
-      
-    "/sms" or "/verification":
-      - "测试短信轰炸"
-      - "测试验证码枚举"
-      - "测试验证码重放"
+**示例：**
+```
+你发现：POST /api/login
+思考：
+  - SQL注入？→ 测试 username=' OR '1'='1
+  - 暴力破解？→ 多次尝试错误密码
+  - 用户枚举？→ 测试不存在的用户
 ```
 
-### 5. 漏洞链推理 (Vulnerability Chain Inference)
+### 3. 遇到"资金/订单类"接口时这么想
 
-```yaml
-vulnerability_chain:
-  name: "漏洞链构造"
-  
-  # 利用已发现的漏洞构造利用链
-  chains:
-    - name: "用户信息 -> 越权"
-      steps:
-        - "发现用户查询接口"
-        - "提取userId"
-        - "尝试修改/删除他人数据"
-        
-    - name: "短信接口 -> 用户枚举"
-      steps:
-        - "发现短信接口"
-        - "批量探测手机号"
-        - "通过手机号获取userId"
-        - "利用userId进行越权"
-        
-    - name: "订单遍历 -> 退款"
-      steps:
-        - "发现订单列表接口"
-        - "遍历userId获取订单"
-        - "提取orderNo"
-        - "尝试退款"
-        
-    - name: "Token泄露 -> 账户接管"
-      steps:
-        - "发现token泄露接口"
-        - "获取他人token"
-        - "使用token冒充他人"
+当你发现支付、退款、订单接口时：
+
+```
+思考：钱能转走吗？订单能篡改吗？能刷单吗？
+```
+
+**推理步骤：**
+1. 订单归属校验了吗？（用A的token能操作B的订单吗？）
+2. 金额能篡改吗？（改成0.01）
+3. 退款接口需要什么权限？能绕过吗？
+
+**示例：**
+```
+你发现：POST /api/pay/refund
+思考：
+  - 需要认证吗？→ 不带token测试
+  - 需要自己的订单吗？→ 尝试他人的orderNo
+  - 金额能改成0吗？→ amount=0测试
+```
+
+### 4. 遇到"用户信息"接口时这么想
+
+当你发现返回用户资料的接口时：
+
+```
+思考：别人的资料能拿到吗？密码暴露了吗？能修改吗？
+```
+
+**推理步骤：**
+1. 不带token能拿到吗？
+2. 响应里有password吗？
+3. 能通过phone/email找到userId吗？
+4. 修改接口有校验吗？能改别人的吗？
+
+**示例：**
+```
+你发现：GET /api/user/info?phone=138xxx
+思考：
+  - 返回userId了吗？→ 记录
+  - 返回password了吗？→ 漏洞
+  - userId=124能查到吗？→ IDOR测试
 ```
 
 ---
 
-## 检测策略 (Detection Strategies)
+## 敏感信息识别
 
-### 1. SQL注入检测策略
+### 必须识别这些敏感字段
 
-```yaml
-sql_injection:
-  approach: "参数化模糊测试"
-  
-  targets:
-    - "URL参数"
-    - "POST body"
-    - "JSON字段"
-    - "HTTP头"
-    
-  payloads:
-    error_based:
-      - "' OR '1'='1"
-      - "' OR '1'='1' --"
-      - "1' AND '1'='2"
-      
-    blind:
-      - "' AND 1=1 --"
-      - "' AND 1=2 --"
-      - "'; WAITFOR DELAY '0:0:5'--"
-      
-    time_based:
-      - "'; SELECT pg_sleep(5)--"
-      - "'; BENCHMARK(5000000,MD5(1))--"
-      
-  detection:
-    - "响应包含SQL错误关键字"
-    - "响应时间异常"
-    - "响应内容差异"
+```
+password      → 不应返回前端
+token         → 可能存在泄露
+secretKey     → 不应暴露
+apiKey        → 不应暴露
+balance       → 可能存在越权
+orderNo       → 可能被篡改
+userId        → 可用于越权测试
+phone         → 可用于用户枚举
+email         → 可用于钓鱼
 ```
 
-### 2. 越权访问检测策略
+### 响应分析思维
 
-```yaml
-broken_access_control:
-  approach: "参数遍历 + 身份切换"
-  
-  test_cases:
-    - name: "IDOR - 资源遍历"
-      method: "遍历ID参数访问他人资源"
-      ids: "从发现的最小ID开始递增"
-      
-    - name: "纵向越权"
-      method: "使用低权限token访问高权限接口"
-      
-    - name: "横向越权"
-      method: "使用A用户token访问B用户资源"
-      
-  detection:
-    - "返回了他人的敏感数据"
-    - "操作成功但不是自己的资源"
+当你看到响应时：
 ```
-
-### 3. 敏感信息泄露检测策略
-
-```yaml
-sensitive_data_exposure:
-  approach: "响应内容审查"
-  
-  check_points:
-    - "密码字段是否返回"
-    - "token/session是否泄露"
-    - "手机号/身份证是否完整"
-    - "银行卡号是否脱敏"
-    - "余额/资金信息是否暴露"
-    
-  response_analysis:
-    - "检查敏感字段名"
-    - "检查字段值是否完整"
-    - "检查脱敏规则"
-```
-
-### 4. 认证绕过检测策略
-
-```yaml
-auth_bypass:
-  approach: "认证机制测试"
-  
-  test_cases:
-    - "空token测试"
-    - "无效token测试"
-    - "token过期时间篡改"
-    - "JWT算法篡改 (alg: none)"
-    - "使用其他用户token"
+1. 这个响应正常吗？ → 检查状态码
+2. 有敏感字段吗？ → 搜索password/token/secret
+3. 有ID类字段吗？ → 尝试遍历
+4. 有手机号吗？ → 尝试用户枚举
+5. 有订单号吗？ → 尝试越权操作
 ```
 
 ---
 
-## 执行决策配置
+## 漏洞链构造思维
 
-```yaml
-execution_flow:
-  - phase: 0_prerequisites
-    modules: [prerequisite_checker]
-    always: true
+### 发现用户枚举后的推理
 
-  - phase: 1_asset_discovery
-    stages:
-      - name: static_analysis
-        modules: [api_parser]
-        always: true
-        
-      - name: dynamic_analysis
-        modules: [dynamic_api_analyzer]
-        condition: "playwright_available"
-        
-      - name: response_learning
-        modules: [response_inference_engine]
-        always: true
-        # 从响应中学习，收集敏感字段、ID、token等
-        
-      - name: parameter_inference
-        modules: [parameter_inference_engine]
-        condition: "has_discovered_endpoints"
-        
-      - name: auth_context_learning
-        modules: [auth_context_engine]
-        condition: "found_login_or_token_endpoint"
+当你发现可以枚举用户时：
 
-  - phase: 2_vulnerability_testing
-    # 推理式漏洞测试
-    stages:
-      - name: sql_injection
-        modules: [inference_sql_tester]
-        approach: "参数化模糊 + 响应推断"
-        
-      - name: broken_access_control
-        modules: [inference_bac_tester]
-        approach: "ID遍历 + 身份切换"
-        
-      - name: sensitive_data_exposure
-        modules: [inference_sensitive_tester]
-        approach: "响应内容审查"
-        
-      - name: auth_bypass
-        modules: [inference_auth_tester]
-        approach: "认证机制测试"
-        
-      - name: vulnerability_chain
-        modules: [vulnerability_chain_engine]
-        condition: "has_multiple_findings"
-        # 利用已有发现构造漏洞链
+```
+你发现的：GET /api/user/check?phone=138xxx 返回 userId
 
-  - phase: 3_exploitation
-    # 深度利用测试
-    stages:
-      - name: token_hijacking
-        condition: "found_token_leak"
-        
-      - name: account_takeover
-        condition: "can_enumerate_users"
-        
-      - name: data_manipulation
-        condition: "found_idor"
+思考能做什么：
+1. 收集更多userId → 批量探测手机号
+2. 用userId查更多信息 → GET /api/user/info?userId=xxx
+3. 尝试修改他人资料 → POST /api/user/update
+4. 查看他人订单 → GET /api/order/list?userId=xxx
+5. 尝试退款 → POST /api/refund (用他人的orderNo)
+```
+
+### 发现token泄露后的推理
+
+当你发现响应中包含token时：
+
+```
+你发现的：{"token": "xxx", "userId": 123}
+
+思考能做什么：
+1. 这个token有效吗？ → 用这个token访问其他接口
+2. 能用这个token访问admin接口吗？ → GET /api/admin/xxx
+3. token能用于其他用户吗？ → 改userId重放
+
+利用链：
+token泄露 → 用token访问敏感接口 → 越权操作
+```
+
+### 发现订单接口后的推理
+
+当你发现订单相关接口时：
+
+```
+你发现的：GET /api/order/list
+
+思考能做什么：
+1. 不带认证能访问吗？ → 测试
+2. 能带userId参数吗？ → 查他人订单
+3. 能找到orderNo吗？ → 尝试 /api/order/detail?orderNo=xxx
+4. 有退款接口吗？ → 尝试 /api/refund?orderNo=xxx
+
+利用链：
+用户枚举 → 获取userId → 查订单 → 退款
 ```
 
 ---
 
-## 推理式检测示例
+## HTTP方法与测试策略
 
-### 示例1: 发现用户查询接口
+### 不同方法的测试重点
 
-```
-输入: GET /api/user/info?userId=1
-响应: {"id":1,"name":"张三","phone":"13800138000","password":"xxx"}
+| 方法 | 测试重点 |
+|------|----------|
+| GET | 参数遍历、IDOR、信息泄露 |
+| POST | 认证绕过、业务逻辑、注入 |
+| PUT | 资源篡改、越权修改 |
+| DELETE | 资源删除、越权删除 |
+| PATCH | 部分更新、字段覆盖 |
 
-推理过程:
-1. 响应包含password字段 → 敏感信息泄露
-2. 响应包含phone字段 → 测试手机号枚举
-3. 响应包含id字段 → 尝试 userId=2,3,4...
-4. 路径包含/user → 测试 /user/update, /user/delete
+### 参数测试思维
 
-下一步测试:
-- GET /api/user/info?userId=2  # 越权查看
-- POST /api/user/update?id=2  # 越权修改
-```
-
-### 示例2: 发现登录接口
+当你发现一个接口有参数时：
 
 ```
-输入: POST /api/login
-参数: {"username":"test","password":"test"}
-响应: {"token":"eyJhbGciOiJIUzI1NiJ9...","userId":123}
+接口：GET /api/xxx?param=value
 
-推理过程:
-1. 响应包含token → 添加到认证上下文
-2. 发现登录接口 → 测试SQL注入
-3. 发现登录接口 → 测试暴力破解
-4. 使用token → GET /api/user/info (验证token有效)
-
-下一步测试:
-- POST /api/login {"username":"admin'--","password":"任意"}  # SQL注入
-- 批量POST /api/login  # 暴力破解
-- GET /api/admin/* (使用发现的token)  # 越权访问
-```
-
-### 示例3: 发现订单接口
-
-```
-输入: GET /api/order/list
-响应: {"orders":[{"orderNo":"PK20240101001","userId":123,"amount":100}]}
-
-推理过程:
-1. 响应包含orderNo → 提取订单号
-2. 响应包含userId → 测试 userId=其他值
-3. 路径包含/order → 测试 /order/refund
-
-下一步测试:
-- GET /api/order/list?userId=124  # 越权查看他人订单
-- POST /api/order/refund?orderNo=PK20240101001&amount=0.01  # 退款测试
+测试顺序：
+1. param=空值
+2. param=正常值
+3. param=特殊字符 (' " < >)
+4. param=SQL注入 (1' OR '1'='1)
+5. param=XSS (<script>alert(1)</script>)
+6. param=路径遍历 (../../../etc/passwd)
+7. param=其他用户的值 (IDOR)
 ```
 
 ---
 
-## 核心模块能力池
+## 认证上下文理解
 
-| 模块 | 能力 | 推理类型 |
-|-----|------|---------|
-| `response_inference_engine` | 响应推断 | 学习 |
-| `parameter_inference_engine` | 参数推理 | 构造 |
-| `auth_context_engine` | 认证上下文传递 | 记忆 |
-| `business_logic_engine` | 业务逻辑推断 | 联想 |
-| `vulnerability_chain_engine` | 漏洞链构造 | 综合 |
-| `inference_sql_tester` | 推理式SQL注入 | 验证 |
-| `inference_bac_tester` | 推理式越权测试 | 验证 |
-| `inference_auth_tester` | 推理式认证测试 | 验证 |
+### 发现登录接口后
 
----
+```
+你发现的：POST /api/login {"username":"xxx","password":"xxx"}
 
-## 执行决策规则
+思考：
+1. 返回token吗？ → 记录token
+2. 返回userId吗？ → 记录userId
+3. 响应有什么区别？ → 用户枚举
+4. 有验证码吗？ → 暴力破解难度
 
-```yaml
-decision_rules:
-  # 从响应中学习
-  when_response_contains:
-    "password" or "token" or "userId" or "phone":
-      → extract_to_context()
-      → trigger_related_tests()
-      
-  # 利用已有信息
-  when_has_context:
-    has_userId: → test_idor
-    has_token: → test_protected_endpoints
-    has_phone: → test_phone_enumeration
-    
-  # 漏洞链触发
-  when_multiple_findings:
-    has_userId + has_orderNo: → test_order_chain
-    has_phone + can_register: → test_account_takeover
+接下来用这个token：
+- 访问 GET /api/user/info
+- 访问 GET /api/order/list
+- 尝试 GET /api/admin/xxx (测试权限)
+```
+
+### 发现token但不知道用法时
+
+```
+你发现的：token=eyJhbGciOiJIUzI1NiJ9...
+
+思考：
+1. JWT吗？ → 解码看payload
+2. 放在哪？ → Authorization: Bearer token
+3. 哪个接口用？ → 尝试访问需要认证的接口
+4. userId是什么？ → 从token解码获取
 ```
 
 ---
 
-## 最佳实践
+## 常见漏洞模式识别
 
-1. **边发现边测试**: 每发现一个新端点，立即进行基础测试
-2. **响应即知识**: 响应中包含的信息都是下一步测试的线索
-3. **上下文传递**: 发现的token、ID等信息要传递给后续请求
-4. **漏洞链思维**: 不要只看单个漏洞，要思考漏洞组合利用
-5. **攻击者视角**: 思考"如果我是攻击者，会怎么利用这个接口"
+### 用户相关漏洞模式
+
+```
+1. 用户信息泄露
+   特征：响应包含password、token
+   测试：不带认证访问
+
+2. 用户枚举
+   特征：用户存在/不存在响应不同
+   测试：探测不存在的手机号/邮箱
+
+3. 密码重置漏洞
+   特征：可通过phone/email重置
+   测试：尝试修改他人密码
+
+4. 越权访问
+   特征：通过参数切换用户
+   测试：修改userId/phone等参数
+```
+
+### 订单相关漏洞模式
+
+```
+1. 订单遍历
+   特征：参数化查询订单
+   测试：修改userId查他人订单
+
+2. 订单篡改
+   特征：订单金额可修改
+   测试：尝试amount=0.01
+
+3. 虚假订单
+   特征：可创建任意订单
+   测试：构造恶意订单数据
+
+4. 退款绕过
+   特征：退款接口无校验
+   测试：使用他人orderNo退款
+```
+
+### 认证相关漏洞模式
+
+```
+1. JWT伪造
+   特征：alg:None 或不验签
+   测试：修改payload重放
+
+2. 暴力破解
+   特征：无验证码、无限流
+   测试：多次尝试密码
+
+3. 会话固定
+   特征：登录后session不变
+   测试：登录前后cookie对比
+
+4. 登出后令牌仍有效
+   特征：token注销机制缺失
+   测试：登出后重放token
+```
 
 ---
 
-## 环境要求
+## 推理式测试流程
 
-### 必需依赖
-- **requests**: HTTP 客户端
-- **playwright**: 无头浏览器 (必须)
+### 第一步：发现端点
 
-### 可选平替
-- **pyppeteer**: 异步无头浏览器
-- **selenium**: 多浏览器自动化
+不要急着测试，先理解发现了什么：
+
+```
+你发现的端点列表：
+- /api/login        → 认证入口
+- /api/user/info    → 用户信息
+- /api/order/list   → 订单列表
+- /api/pay/refund   → 退款接口
+
+思考这些接口的关系：
+login → 获取token → 用token访问 user/info, order/list
+refund → 需要订单 → 需要先有orderNo
+```
+
+### 第二步：理解数据流
+
+```
+思考数据怎么流动的：
+1. 用户登录 → 获得userId和token
+2. 用userId查询用户信息
+3. 用userId查询用户订单
+4. 用orderNo进行支付/退款
+
+每个环节都可能出问题：
+- login可能被绕过
+- user/info可能泄露信息
+- order/list可能存在越权
+- refund可能缺少校验
+```
+
+### 第三步：构造攻击链
+
+```
+利用发现构造利用链：
+
+发现1：用户枚举
+  → 能获取userId列表
+
+发现2：订单接口
+  → 用userId查订单
+
+发现3：订单详情泄露
+  → 获取orderNo
+
+发现4：退款接口
+  → 用orderNo退款
+
+组合成攻击链：
+用户枚举 → 查订单 → 获取orderNo → 退款
+```
+
+### 第四步：验证并报告
+
+```
+验证漏洞时思考：
+1. 这个漏洞是真的吗？ → 再测一次确认
+2. 影响有多大？ → 能利用吗？有实际危害吗？
+3. 怎么利用？ → 提供PoC
+4. 如何修复？ → 提出修复建议
+```
+
+---
+
+## 特殊情况处理
+
+### 遇到加密/混淆的数据时
+
+```
+思考：
+- 能解密吗？ → 查看前端JS代码
+- 有密钥泄露吗？ → 检查响应、注释
+- 能绕过吗？ → 不带加密参数试试
+```
+
+### 遇到验证码/限流时
+
+```
+思考：
+- 验证码能绕过吗？ → 改参数、删cookie
+- 限流能绕过吗？ → 改IP、延时
+- 有风控吗？ → 行为异常检测
+```
+
+### 遇到WAP环境时
+
+```
+思考：
+- 需要Cookie吗？ → 保持session
+- 需要Referer吗？ → 添加来源
+- 需要特定Header吗？ → 复制正常请求头
+```
+
+---
+
+## 输出格式
+
+完成测试后，按以下格式报告：
+
+```markdown
+## 漏洞列表
+
+| 编号 | 类型 | 严重性 | 端点 | 参数 | PoC | 影响 |
+|------|------|--------|------|------|-----|------|
+| 1 | 敏感信息泄露 | HIGH | /api/user/info | - | GET /api/user/info 返回password | 可获取用户密码 |
+| 2 | IDOR | HIGH | /api/order/list | userId | GET /api/order/list?userId=123 | 可查看他人订单 |
+
+## 漏洞链构造
+
+### 攻击链1
+1. 用户枚举：GET /api/user/check?phone=138xxx → 获取userId
+2. 订单查询：GET /api/order/list?userId=xxx → 获取orderNo  
+3. 退款操作：POST /api/refund?orderNo=xxx&amount=0.01 → 退款成功
+
+## 修复建议
+
+1. 删除响应中的password字段
+2. 添加userId归属校验
+3. 退款接口添加权限校验
+```
+
+---
+
+## 总结
+
+### 核心思维
+
+1. **不只是测试，要理解** - 理解接口在做什么
+2. **不只是单个漏洞，要构造链** - 发现一个点，思考能做什么
+3. **不只是工具，要用脑子** - 思考攻击者会怎么做
+4. **不只是发现，要验证** - 确认漏洞真实存在
+
+### 检测口诀
+
+```
+看到接口想认证
+看到认证想绕过
+看到数据想遍历
+看到金额想篡改
+看到用户想枚举
+看到订单想越权
+看到token想泄露
+看到修改想权限
+```
+
+---
+
+## 参考资源
+
+如有疑问，可参考：
+- OWASP API Security Top 10
+- CVSS 漏洞评分标准
+- 各语言 SQL 注入 payload 集
