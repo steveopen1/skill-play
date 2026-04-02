@@ -602,6 +602,49 @@ class ReportGenerator:
                 report.append(f"- {key}: {value}")
             report.append("")
         
+        # 父路径探测结果
+        if results.get('parent_paths'):
+            parent_paths = results['parent_paths']
+            html_fallback = sum(1 for p in parent_paths.values() if not p.get('is_api'))
+            real_api = sum(1 for p in parent_paths.values() if p.get('is_api'))
+            
+            report.append("## 父路径分析")
+            report.append("")
+            report.append(f"- 总父路径: {len(parent_paths)}")
+            report.append(f"- HTML fallback: {html_fallback} (nginx fallback 配置)")
+            report.append(f"- JSON API: {real_api}")
+            report.append("")
+            
+            # 检测 nginx fallback 问题
+            if html_fallback > 0 and real_api == 0:
+                report.append("### 安全问题: nginx fallback 配置")
+                report.append("")
+                report.append("**问题**: 所有 API 路径都返回 HTML 而不是 JSON API")
+                report.append("")
+                report.append("**可能原因**:")
+                report.append("1. 后端 API 服务未运行 (端口 667 不可达)")
+                report.append("2. nginx 未正确配置 API 路径代理")
+                report.append("3. API 服务部署在不同的服务器/端口")
+                report.append("")
+                report.append("**影响**: 前端无法连接后端 API，系统功能不可用")
+                report.append("")
+                report.append("**建议**:")
+                report.append("1. 检查后端服务是否运行")
+                report.append("2. 检查 nginx proxy_pass 配置")
+                report.append("3. 检查防火墙/安全组规则")
+                report.append("")
+                
+                # 添加为安全问题
+                results['vulnerabilities'].insert(0, {
+                    'type': 'Backend API Unreachable / nginx fallback',
+                    'severity': 'HIGH',
+                    'endpoint': 'Multiple paths',
+                    'evidence': f'{html_fallback} paths return HTML fallback instead of JSON API'
+                })
+            elif real_api > 0:
+                report.append("**状态**: 发现可访问的 JSON API 端点")
+                report.append("")
+        
         # 漏洞详情
         if results.get('vulnerabilities'):
             report.append("## 漏洞详情")

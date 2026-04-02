@@ -598,8 +598,11 @@ class APIFuzzer:
         
         # 对父路径进行 fuzzing
         if parent_probe_result:
+            probed_api_count = 0
             for path, info in parent_probe_result.items():
-                if info.get('is_api'):
+                # 即使不是 JSON API，也进行 fuzzing（nginx fallback 也是安全问题）
+                if info.get('is_api') or info.get('status') == 200:
+                    probed_api_count += 1
                     url = self.target.rstrip('/') + path
                     
                     # 尝试添加参数
@@ -610,6 +613,17 @@ class APIFuzzer:
                     ]
                     
                     for test_url in test_urls:
+                        result = self._test_url(test_url, path)
+                        if result:
+                            fuzz_results.append(result)
+            
+            if probed_api_count == 0:
+                print(f"  [WARN] 所有父路径返回 HTML (nginx fallback)，无法进行有效 fuzzing")
+                # 即使是 fallback，也添加一些测试 URL
+                for path, info in list(parent_probe_result.items())[:5]:
+                    url = self.target.rstrip('/') + path
+                    for payload in ['<script>alert(1)</script>', "' OR '1'='1"]:
+                        test_url = url + '?q=' + payload
                         result = self._test_url(test_url, path)
                         if result:
                             fuzz_results.append(result)
