@@ -26,6 +26,11 @@ trigger:
 
 > **核心定位**：这是一个模块化的 API 安全测试框架，而非固定脚本。
 >
+> **必须使用无头浏览器**：
+> - **禁止降级为 requests/curl**：现代 SPA 应用使用 JavaScript 动态加载 API，requests/curl 无法执行 JS，无法发现真实 API
+> - **必须使用无头浏览器**：Playwright 等无头浏览器可以执行完整 JavaScript，获取实际调用的 API 端点和参数
+> - **真实环境模拟**：无头浏览器更接近真实用户行为，能发现动态加载的 API
+>
 > **核心理念**：
 > - 各模块独立，可单独使用也可组合
 > - 根据目标站点特点选择合适的模块组合
@@ -37,12 +42,12 @@ trigger:
 
 ```
 阶段 0: 前置检查
-    └── 检查环境依赖 (playwright, requests)
+    └── 检查环境依赖 (playwright 必须, requests 必须)
 
 阶段 1: 资产发现
     ├── 静态分析 - JS 文件解析 (core.api_parser)
-    ├── 动态分析 - Playwright 网络捕获 (core.dynamic_api_analyzer) [SPA 必备]
-    ├── API Hook - 获取真实调用参数 (core.api_interceptor) [需要登录时使用]
+    ├── 动态分析 - Playwright 网络捕获 (core.dynamic_api_analyzer) [必须]
+    ├── API Hook - Playwright 获取真实调用参数 (core.api_interceptor)
     └── 父路径探测 - 发现可访问路径
 
 阶段 2: 漏洞分析
@@ -57,6 +62,8 @@ trigger:
 
 阶段 4: 报告生成
 ```
+
+**重要**：阶段 1 必须使用 Playwright 无头浏览器，禁止使用 requests/curl 降级替代。
 
 ---
 
