@@ -39,6 +39,31 @@ trigger:
 
 ---
 
+## 快速执行 (推荐方式)
+
+**强烈建议**: 使用自动化入口脚本执行完整测试流程，而不是手动逐阶段执行。
+
+```bash
+cd /workspace/skill-play/API-Security-Testing-Optimized
+
+# 方式 1: 直接运行 (推荐)
+python3 run_skill.py http://target.com
+
+# 方式 2: 导入使用
+python3 -c "
+from run_skill import run_security_test
+result = run_security_test('http://target.com')
+"
+```
+
+**入口脚本功能**:
+- 自动检查并修复依赖 (playwright, requests)
+- 自动调用智能编排器执行完整流程
+- 自动生成安全测试报告
+- 自动处理失败和回退
+
+---
+
 ## 强制执行声明
 
 **本 Skill 必须完整执行，不允许跳过任何阶段。**
