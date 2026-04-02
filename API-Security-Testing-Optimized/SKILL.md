@@ -46,27 +46,36 @@ trigger:
 
 ## 快速执行 (推荐方式)
 
-**强烈建议**: 使用自动化入口脚本执行完整测试流程。
+**强烈建议**: 使用 `core.runner` 模块执行完整测试流程。
 
 ```bash
 cd /workspace/skill-play/API-Security-Testing-Optimized
 
-# 方式 1: 直接运行 (推荐)
-python3 run_skill.py http://target.com
+# 方式 1: 命令行 (推荐)
+python3 -m core.runner http://target.com
 
 # 方式 2: 导入使用
-python3 -c "
-from run_skill import run_security_test
-result = run_security_test('http://target.com')
-"
+python3 -c "from core.runner import run_skill; run_skill('http://target.com')"
+
+# 方式 3: 在其他模块中调用
+from core.runner import run_skill
+result = run_skill('http://target.com')
 ```
 
-**入口脚本功能**:
-- 自动检查并修复依赖 (playwright, requests)
-- 自动调用智能编排器 (`orchestrator`) 执行完整流程
-- 自动整合 V35JSAnalyzer 进行 JS 文件分析
-- 自动生成安全测试报告
-- 自动处理失败和回退
+**core.runner 功能:**
+- 前置检查 - 自动检查/修复 playwright、requests
+- 端点发现 - 整合 V35JSAnalyzer + Swagger + 智能猜测
+- 编排执行 - 调用 orchestrator 执行完整流程
+- 报告生成 - 输出 Markdown 格式报告
+
+**命令行参数:**
+```
+python3 -m core.runner <target> [选项]
+  --no-orchestrator   禁用编排器
+  --no-fuzzing        禁用 fuzzing
+  --no-testing        禁用漏洞测试
+  --max-iterations N  最大迭代次数 (默认 50)
+```
 
 ---
 
