@@ -246,14 +246,16 @@ if command -v docker >/dev/null 2>&1; then
     [ -n "$DOCKER_BROWSER" ] && echo "  [FOUND] Docker 容器: $DOCKER_BROWSER"
 fi
 
-# 阶段 6: 尝试 playwright 完整安装
+# 阶段 6: 验证并尝试修复 playwright 浏览器
 echo ""
-echo "[阶段 6] 验证 playwright 浏览器..."
+echo "[阶段 6] 验证并修复 playwright 浏览器..."
+
+BROWSER_FIXED=false
+
 python3 -c "
 import subprocess
 import sys
 
-# 尝试启动 playwright 浏览器
 test_code = '''
 from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
@@ -276,9 +278,32 @@ else:
     error_msg = result.stderr.strip() if result.stderr else 'Unknown error'
     if 'Executable' in error_msg and 'does not exist' in error_msg:
         print('  [FAIL] chromium 未安装')
+        print('  [TRY] 尝试安装 chromium...')
+        install_result = subprocess.run(
+            ['playwright', 'install', 'chromium'],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        if install_result.returncode == 0:
+            print('  [OK] chromium 安装成功')
+            sys.exit(2)  # 需要重测
+        else:
+            print('  [FAIL] chromium 安装失败')
     elif 'libglib' in error_msg or 'libgtk' in error_msg:
         print('  [FAIL] 系统库缺失')
-        print('  [HINT] 尝试: playwright install-deps chromium')
+        print('  [TRY] 尝试安装系统依赖...')
+        deps_result = subprocess.run(
+            ['playwright', 'install-deps', 'chromium'],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        if deps_result.returncode == 0 or 'apt' in deps_result.stderr.lower() or 'apt' in deps_result.stdout.lower():
+            print('  [OK] 系统依赖安装完成')
+            sys.exit(2)  # 需要重测
+        else:
+            print('  [WARN] install-deps 可能需要 root 权限')
     elif 'Permission' in error_msg:
         print('  [FAIL] 权限错误')
     else:
@@ -286,7 +311,38 @@ else:
     sys.exit(1)
 "
 
-if [ $? -eq 0 ]; then
+INSTALL_STATUS=$?
+
+if [ $INSTALL_STATUS -eq 2 ]; then
+    echo ""
+    echo "[重测] 等待安装完成后重新验证..."
+    sleep 2
+    python3 -c "
+import subprocess
+import sys
+test_code = '''
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    browser.close()
+'''
+result = subprocess.run([sys.executable, '-c', test_code], capture_output=True, text=True, timeout=30)
+if result.returncode == 0:
+    print('  [OK] playwright chromium: 修复成功')
+    sys.exit(0)
+else:
+    print('  [FAIL] 修复后仍不可用')
+    print(result.stderr[:300] if result.stderr else 'Unknown error')
+    sys.exit(1)
+"
+    if [ $? -eq 0 ]; then
+        BROWSER_FIXED=true
+    fi
+elif [ $INSTALL_STATUS -eq 0 ]; then
+    BROWSER_FIXED=true
+fi
+
+if $BROWSER_FIXED; then
     BROWSER_CAPABILITY="playwright"
     AVAILABLE_BROWSERS="$AVAILABLE_BROWSERS playwright"
 fi
