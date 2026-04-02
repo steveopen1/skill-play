@@ -269,14 +269,71 @@ class AssetDiscovery:
             print(f"  [WARN] API Parser 失败: {e}")
     
     def _analyze_dynamic(self):
-        """动态分析 (dynamic_api_analyzer) - 禁用以避免卡住"""
-        print("  [SKIP] 动态分析 (暂用静态解析)")
-        pass
+        """动态分析 (dynamic_api_analyzer)"""
+        try:
+            from core.dynamic_api_analyzer import DynamicAPIAnalyzer
+            
+            analyzer = DynamicAPIAnalyzer(self.target)
+            results = analyzer.analyze_full(timeout=30)  # 30秒超时
+            
+            for ep in results.get('endpoints', []):
+                path = ep.get('path', '')
+                method = ep.get('method', 'GET')
+                params_data = ep.get('params', [])
+                if isinstance(params_data, list):
+                    params_dict = {p: True for p in params_data}
+                else:
+                    params_dict = params_data
+                
+                self.ctx.add_endpoints([{
+                    'path': path,
+                    'method': method,
+                    'params': params_dict,
+                    'source': f"dynamic_{ep.get('source', 'unknown')}",
+                    'semantic_type': self._infer_semantic_type(path),
+                }])
+            
+            print(f"  动态分析: {results.get('unique_endpoints', 0)} 端点")
+            
+        except Exception as e:
+            print(f"  [WARN] Dynamic API Analyzer 失败: {e}")
     
     def _hook_apis(self):
-        """API Hook (api_interceptor) - 禁用以避免卡住"""
-        print("  [SKIP] API Hook (暂用静态解析)")
-        pass
+        """API Hook (api_interceptor)"""
+        if not self.ctx.playwright_available:
+            print("  [SKIP] Playwright 不可用")
+            return
+        
+        try:
+            from core.api_interceptor import APIInterceptor
+            
+            print("  [API Hook] 启动...")
+            interceptor = APIInterceptor(self.target)
+            hook_results = interceptor.hook_all_apis(timeout=30)  # 30秒超时
+            
+            # 保存 Hook 结果到上下文
+            self.ctx.hooked_apis = hook_results.get('endpoints', [])
+            self.ctx.sensitive_apis = hook_results.get('sensitive', [])
+            self.ctx.test_vectors = hook_results.get('test_vectors', [])
+            
+            # 将 Hook 到的端点添加到上下文的端点列表
+            for hooked_ep in hook_results.get('endpoints', []):
+                path = hooked_ep.get('path', hooked_ep.get('url', ''))
+                if path and '/' in path:
+                    self.ctx.add_endpoints([{
+                        'path': path,
+                        'method': hooked_ep.get('method', 'GET'),
+                        'params': hooked_ep.get('params', {}),
+                        'source': f"hooked_{hooked_ep.get('source', 'unknown')}",
+                        'semantic_type': hooked_ep.get('semantic', 'unknown'),
+                    }])
+            
+            print(f"  API Hook: {len(self.ctx.hooked_apis)} 个 API 调用")
+            print(f"  敏感操作: {len(self.ctx.sensitive_apis)} 个")
+            print(f"  测试向量: {len(self.ctx.test_vectors)} 个")
+            
+        except Exception as e:
+            print(f"  [WARN] API Hook 失败: {e}")
     
     def _probe_parent_paths(self):
         """父路径探测"""

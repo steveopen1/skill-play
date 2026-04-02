@@ -76,9 +76,13 @@ class APIInterceptor:
             ('admin_user', 'admin user management'),
         ]
     
-    def hook_all_apis(self, interactions: List[str] = None) -> Dict:
+    def hook_all_apis(self, interactions: List[str] = None, timeout: int = 60) -> Dict:
         """
         Hook 所有 API 调用
+        
+        Args:
+            interactions: 要执行的交互列表
+            timeout: 最大执行时间(秒)
         
         Returns:
             {
@@ -89,94 +93,105 @@ class APIInterceptor:
                 'test_vectors': [...]
             }
         """
-        print(f"  [API Hook] 启动 Hook 器")
+        import threading
+        
+        print(f"  [API Hook] 启动 Hook 器 (超时: {timeout}s)")
         print(f"  [API Hook] 目标: {self.target}")
         
         results = {'total': 0, 'apis': [], 'sensitive': [], 'testable': [], 'test_vectors': []}
+        self._stop_flag = threading.Event()
         
-        try:
-            from playwright.sync_api import sync_playwright
-            
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=self.headless)
-                context = browser.new_context(
-                    viewport={'width': 1920, 'height': 1080},
-                    ignore_https_errors=True
-                )
+        def run_hook():
+            try:
+                from playwright.sync_api import sync_playwright
                 
-                # 使用 add_init_script 确保在页面加载前注入
-                hook_script = """
-                (function() {
-                    window.__API_CALLS__ = [];
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=self.headless)
+                    context = browser.new_context(
+                        viewport={'width': 1920, 'height': 1080},
+                        ignore_https_errors=True
+                    )
                     
-                    // Hook fetch
-                    var origFetch = window.fetch;
-                    window.fetch = function() {
-                        var args = arguments;
-                        var url = args[0] || '';
-                        var options = args[1] || {};
-                        window.__API_CALLS__.push({
-                            type: 'fetch',
-                            method: (options.method || 'GET').toUpperCase(),
-                            url: url
-                        });
-                        return origFetch.apply(window, args);
-                    };
-                    
-                    // Hook XMLHttpRequest
-                    var OrigXHR = window.XMLHttpRequest;
-                    window.XMLHttpRequest = function() {
-                        var xhr = new OrigXHR();
-                        xhr.open = function() {
-                            this.__method = arguments[0];
-                            this.__url = arguments[1];
-                            return OrigXHR.prototype.open.apply(this, arguments);
-                        };
-                        xhr.send = function() {
-                            this.__data = arguments[0];
-                            var self = this;
-                            this.addEventListener('load', function() {
-                                window.__API_CALLS__.push({
-                                    type: 'xhr',
-                                    method: self.__method || 'GET',
-                                    url: self.__url || '',
-                                    data: self.__data || ''
-                                });
+                    hook_script = """
+                    (function() {
+                        window.__API_CALLS__ = [];
+                        var origFetch = window.fetch;
+                        window.fetch = function() {
+                            var args = arguments;
+                            var url = args[0] || '';
+                            var options = args[1] || {};
+                            window.__API_CALLS__.push({
+                                type: 'fetch',
+                                method: (options.method || 'GET').toUpperCase(),
+                                url: url
                             });
-                            return OrigXHR.prototype.send.apply(this, arguments);
+                            return origFetch.apply(window, args);
                         };
-                        return xhr;
-                    };
-                    console.log('[Hook] API Hook 已启动');
-                })();
-                """
-                
-                context.add_init_script(hook_script)
-                
-                page = context.new_page()
-                self._page = page
-                
-                # 访问目标
-                print(f"  [API Hook] 访问目标...")
-                page.goto(self.target, wait_until='networkidle', timeout=30000)
-                page.wait_for_timeout(3000)
-                
-                # 执行交互
-                self._execute_interactions()
-                
-                # 获取结果
-                results = self._process_results()
-                
-                browser.close()
-                
-        except Exception as e:
-            print(f"  [API Hook] 失败: {e}")
-            import traceback
-            traceback.print_exc()
+                        var OrigXHR = window.XMLHttpRequest;
+                        window.XMLHttpRequest = function() {
+                            var xhr = new OrigXHR();
+                            xhr.open = function() {
+                                this.__method = arguments[0];
+                                this.__url = arguments[1];
+                                return OrigXHR.prototype.open.apply(this, arguments);
+                            };
+                            xhr.send = function() {
+                                this.__data = arguments[0];
+                                var self = this;
+                                this.addEventListener('load', function() {
+                                    window.__API_CALLS__.push({
+                                        type: 'xhr',
+                                        method: self.__method || 'GET',
+                                        url: self.__url || '',
+                                        data: self.__data || ''
+                                    });
+                                });
+                                return OrigXHR.prototype.send.apply(this, arguments);
+                            };
+                            return xhr;
+                        };
+                        console.log('[Hook] API Hook 已启动');
+                    })();
+                    """
+                    
+                    context.add_init_script(hook_script)
+                    
+                    page = context.new_page()
+                    self._page = page
+                    
+                    print(f"  [API Hook] 访问目标...")
+                    page.goto(self.target, wait_until='networkidle', timeout=30000)
+                    page.wait_for_timeout(3000)
+                    
+                    if self._stop_flag.is_set():
+                        browser.close()
+                        return
+                    
+                    self._execute_interactions()
+                    
+                    if self._stop_flag.is_set():
+                        browser.close()
+                        return
+                    
+                    results = self._process_results()
+                    
+                    browser.close()
+                    
+            except Exception as e:
+                print(f"  [API Hook] 失败: {e}")
+        
+        # 使用线程执行，超时后停止
+        hook_thread = threading.Thread(target=run_hook)
+        hook_thread.daemon = True
+        hook_thread.start()
+        hook_thread.join(timeout=timeout)
+        
+        if hook_thread.is_alive():
+            print(f"  [API Hook] Hook 超时 ({timeout}s)，停止")
+            self._stop_flag.set()
         
         print(f"  [API Hook] 捕获 {results['total']} 个 API 调用")
         print(f"  [API Hook] 发现 {len(results.get('sensitive', []))} 个敏感操作")
-        print(f"  [API Hook] 发现 {len(results.get('testable', []))} 个可测试操作")
         
         return results
     

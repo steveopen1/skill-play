@@ -72,9 +72,13 @@ class DynamicAPIAnalyzer:
         self._context = None
         self._last_interaction = ""
         
-    def analyze_full(self, max_requests: int = 100) -> Dict:
+    def analyze_full(self, max_requests: int = 100, timeout: int = 60) -> Dict:
         """
         执行完整动态分析
+        
+        Args:
+            max_requests: 最大捕获请求数
+            timeout: 最大执行时间(秒)
         
         Returns:
             {
@@ -84,38 +88,63 @@ class DynamicAPIAnalyzer:
                 'params_summary': {...}
             }
         """
-        print(f"  [DynamicAPI v2] 启动动态分析")
+        import threading
+        
+        print(f"  [DynamicAPI v2] 启动动态分析 (超时: {timeout}s)")
         print(f"  [DynamicAPI v2] 目标: {self.target}")
         
-        try:
-            from playwright.sync_api import sync_playwright
-            
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=self.headless)
-                self._context = browser.new_context(
-                    viewport={'width': 1920, 'height': 1080},
-                    ignore_https_errors=True
-                )
-                self._page = self._context.new_page()
-                
-                # 设置 CDP 拦截器
-                self._setup_cdp_interceptor()
-                
-                # 执行分析流程
-                self._visit_target()
-                self._trigger_login_interactions()
-                self._trigger_search_interactions()
-                self._trigger_navigation()
-                self._trigger_form_submissions()
-                
-                browser.close()
-                
-        except ImportError:
-            print(f"  [DynamicAPI] Playwright 不可用")
-        except Exception as e:
-            print(f"  [DynamicAPI] 分析失败: {e}")
+        self._stop_flag = threading.Event()
+        self._requests_captured = 0
         
-        # 处理结果
+        def run_analysis():
+            try:
+                from playwright.sync_api import sync_playwright
+                
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=self.headless)
+                    self._context = browser.new_context(
+                        viewport={'width': 1920, 'height': 1080},
+                        ignore_https_errors=True
+                    )
+                    self._page = self._context.new_page()
+                    
+                    self._setup_cdp_interceptor()
+                    
+                    self._visit_target()
+                    if self._stop_flag.is_set():
+                        return
+                    
+                    self._trigger_login_interactions()
+                    if self._stop_flag.is_set():
+                        return
+                    
+                    self._trigger_search_interactions()
+                    if self._stop_flag.is_set():
+                        return
+                    
+                    self._trigger_navigation()
+                    if self._stop_flag.is_set():
+                        return
+                    
+                    self._trigger_form_submissions()
+                    
+                    browser.close()
+                    
+            except ImportError:
+                print(f"  [DynamicAPI] Playwright 不可用")
+            except Exception as e:
+                print(f"  [DynamicAPI] 分析失败: {e}")
+        
+        # 使用线程执行，超时后停止
+        analysis_thread = threading.Thread(target=run_analysis)
+        analysis_thread.daemon = True
+        analysis_thread.start()
+        analysis_thread.join(timeout=timeout)
+        
+        if analysis_thread.is_alive():
+            print(f"  [DynamicAPI] 分析超时 ({timeout}s)，停止")
+            self._stop_flag.set()
+        
         results = self._process_results()
         print(f"  [DynamicAPI] 捕获 {results['total_api']} 个 API 请求")
         
