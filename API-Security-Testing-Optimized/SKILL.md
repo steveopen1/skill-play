@@ -35,13 +35,18 @@ trigger:
 
 # API 安全测试 Skill
 
-针对授权目标进行结构化的 REST/GraphQL API 安全评估。
+> **本文件是 Skill 的模块能力说明和流程框架文档**
+> 
+> 核心定位：
+> 1. **模块能力说明**: 描述 core/ 目录下各模块的功能和使用方法
+> 2. **流程框架**: 定义测试的执行阶段和决策逻辑
+> 3. **执行入口**: `run_skill.py` 是自动化执行脚本，会调用 core 模块执行测试
 
 ---
 
 ## 快速执行 (推荐方式)
 
-**强烈建议**: 使用自动化入口脚本执行完整测试流程，而不是手动逐阶段执行。
+**强烈建议**: 使用自动化入口脚本执行完整测试流程。
 
 ```bash
 cd /workspace/skill-play/API-Security-Testing-Optimized
@@ -58,9 +63,61 @@ result = run_security_test('http://target.com')
 
 **入口脚本功能**:
 - 自动检查并修复依赖 (playwright, requests)
-- 自动调用智能编排器执行完整流程
+- 自动调用智能编排器 (`orchestrator`) 执行完整流程
+- 自动整合 V35JSAnalyzer 进行 JS 文件分析
 - 自动生成安全测试报告
 - 自动处理失败和回退
+
+---
+
+## 核心模块能力
+
+| 模块 | 功能 | 关键能力 |
+|------|------|---------|
+| **orchestrator** | 智能编排器 | 协调各模块，按阶段执行测试 |
+| **V35JSAnalyzer** | JS 分析 | 从 JS 文件提取 API 端点 (167+ 模式) |
+| **browser_tester** | 浏览器测试 | DOM XSS、SPA 路由、表单交互 |
+| **cloud_storage_tester** | 云存储测试 | OSS/COS/S3/MinIO 漏洞检测 |
+| **api_fuzzer** | 模糊测试 | SQL注入、XSS、路径遍历 |
+| **advanced_recon** | 高级侦察 | 被动探测、指纹识别 |
+
+---
+
+## 端点发现能力整合
+
+**问题**: 原 orchestrator 的端点发现能力较弱
+
+**解决方案**: 整合 V35JSAnalyzer 的 JS 文件分析能力
+
+```
+orchestrator._stage_discovery() 执行流程:
+    │
+    ├── 1. reasoning engine 观察 (原有)
+    │
+    ├── 2. Swagger/API 文档发现 (原有)
+    │
+    ├── 3. V35JSAnalyzer JS 分析 (新增整合)
+    │       └── 调用 V35JSAnalyzer.analyze_js()
+    │           ├── axios 模式提取
+    │           ├── fetch 模式提取
+    │           ├── 通用路径提取
+    │           └── API 路径提取
+    │
+    └── 4. SPA 智能路径猜测 (新增)
+            └── 常见 API 路径探测
+```
+
+**V35JSAnalyzer 支持的模式**:
+```python
+patterns = [
+    (r'axios\.(get|post|put|delete|patch)\s*\(\s*[\'"`]([^\'"`]+)[\'"`]', 'axios'),
+    (r'fetch\s*\(\s*[\'"`]([^\'"`]+)[\'"`]', 'fetch'),
+    (r'[\'"`](/[a-z]+/[^\'"`\s?#]*)[\'"`]', 'generic_path'),
+    (r'[\'"`](/api/[^\'"`\s?#]+)[\'"`]', 'api_path'),
+    (r'[\'"`](/users/[^\'"`\s?#]+)[\'"`]', 'users_path'),
+    # ... 更多模式
+]
+```
 
 ---
 

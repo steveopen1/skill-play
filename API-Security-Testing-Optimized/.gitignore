@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Reports
+*.md
+
+# OS
+.DS_Store

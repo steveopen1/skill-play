@@ -350,8 +350,66 @@ class EnhancedAgenticOrchestrator:
         
         self._emit('stage_complete', {'stage': 'context_analysis'})
     
+    def _discover_js_files(self) -> List[str]:
+        """发现目标站点的 JS 文件"""
+        import re
+        
+        js_files = []
+        
+        try:
+            # 获取首页 HTML
+            resp = self.session.get(self.target, timeout=10)
+            html = resp.text
+            
+            # 提取所有 JS 文件 URL
+            patterns = [
+                r'<script[^>]+src=["\']([^"\']+\.js[^"\']*)["\']',
+                r'src=["\']([^"\']+\.js[^"\']*)["\']',
+            ]
+            
+            for pattern in patterns:
+                matches = re.findall(pattern, html)
+                for match in matches:
+                    if match.startswith('//'):
+                        js_url = 'https:' + match
+                    elif match.startswith('/'):
+                        js_url = self.target.rstrip('/') + match
+                    elif match.startswith('http'):
+                        js_url = match
+                    else:
+                        continue
+                    
+                    # 只添加本地 JS 文件
+                    if self.target.replace('http://', '').replace('https://', '').split('/')[0] in js_url:
+                        if js_url not in js_files:
+                            js_files.append(js_url)
+            
+            # 尝试常见 JS 路径
+            common_js_paths = [
+                '/static/js/app.js',
+                '/static/js/main.js',
+                '/js/app.js',
+                '/js/main.js',
+                '/assets/js/app.js',
+            ]
+            
+            for path in common_js_paths:
+                url = self.target.rstrip('/') + path
+                try:
+                    resp = self.session.head(url, timeout=5)
+                    if resp.status_code == 200:
+                        if url not in js_files:
+                            js_files.append(url)
+                except:
+                    pass
+                    
+        except Exception as e:
+            logger.warning(f"JS 文件发现失败: {e}")
+        
+        return js_files
+    
     def _stage_discovery(self):
-        """阶段 3: API 发现"""
+        """阶段 3: API 发现 (整合 V35JSAnalyzer)"""
         print("\n[*] Phase 3: API 发现")
         
         self._emit('stage_start', {'stage': 'discovery'})
@@ -359,19 +417,12 @@ class EnhancedAgenticOrchestrator:
         
         discovered_paths = set()
         
+        # 方式 1: 从 reasoning engine 获取 (原有逻辑)
         for obs in self.reasoner.get_observations():
             if obs.api_indicators:
                 discovered_paths.add(obs.url)
         
-        for path in discovered_paths:
-            endpoint = Endpoint(
-                path=path,
-                method='GET',
-                source='reasoning',
-                score=5
-            )
-            self.context_manager.add_discovered_endpoint(endpoint)
-        
+        # 方式 2: Swagger/API文档发现 (原有逻辑)
         if self.context_manager.context.content.swagger_urls:
             for url in self.context_manager.context.content.swagger_urls:
                 endpoint = Endpoint(
@@ -382,6 +433,83 @@ class EnhancedAgenticOrchestrator:
                     is_high_value=True
                 )
                 self.context_manager.add_discovered_endpoint(endpoint)
+        
+        # 方式 3: V35JSAnalyzer JS 文件分析 (新增整合)
+        print("    [V35JSAnalyzer] 开始 JS 文件分析...")
+        try:
+            # 延迟导入避免循环依赖
+            from core.deep_api_tester_v55 import V35JSAnalyzer
+            
+            js_analyzer = V35JSAnalyzer(self.target, self.session)
+            
+            # 发现 JS 文件
+            js_files = self._discover_js_files()
+            print(f"    [V35JSAnalyzer] 发现 {len(js_files)} 个 JS 文件")
+            
+            # 分析每个 JS 文件
+            js_endpoints = []
+            for js_url in js_files:
+                result = js_analyzer.analyze_js(js_url)
+                js_endpoints.extend(result['endpoints'])
+                if result['endpoints']:
+                    print(f"    [V35JSAnalyzer] {js_url.split('/')[-1]}: 发现 {len(result['endpoints'])} 个端点")
+            
+            # 去重并添加到 context
+            seen = set()
+            for ep in js_endpoints:
+                # 标准化路径
+                path = ep.url.replace(self.target.rstrip('/'), '')
+                key = f'{ep.method}:{path}'
+                if key not in seen and len(path) > 1:
+                    seen.add(key)
+                    endpoint = Endpoint(
+                        path=path,
+                        method=ep.method,
+                        source=f'v35js_{ep.discovered_by}',
+                        score=7,
+                        is_high_value=True
+                    )
+                    self.context_manager.add_discovered_endpoint(endpoint)
+                    discovered_paths.add(path)
+            
+            print(f"    [V35JSAnalyzer] 共发现 {len(js_endpoints)} 个 API 端点")
+            
+        except Exception as e:
+            logger.warning(f"V35JSAnalyzer 分析失败: {e}")
+            print(f"    [WARN] V35JSAnalyzer 分析失败: {e}")
+        
+        # 方式 4: 基于上下文的智能猜测 (新增)
+        if self.context_manager.context.content.is_spa:
+            print("    [智能猜测] SPA 模式，猜测常见 API 路径...")
+            common_api_paths = [
+                '/api/users', '/api/user', '/api/admin', '/api/auth',
+                '/api/login', '/api/logout', '/api/profile', '/api/settings',
+                '/auth/login', '/auth/logout', '/auth/token',
+                '/user/info', '/user/list', '/user/profile',
+                '/admin/users', '/admin/config', '/admin/settings',
+            ]
+            for path in common_api_paths:
+                if path not in discovered_paths:
+                    try:
+                        resp = self.session.get(
+                            self.target.rstrip('/') + path,
+                            timeout=5
+                        )
+                        if resp.status_code == 200:
+                            ct = resp.headers.get('Content-Type', '')
+                            if 'json' in ct.lower() or '{' in resp.text[:100]:
+                                endpoint = Endpoint(
+                                    path=path,
+                                    method='GET',
+                                    source='intelligent_guess',
+                                    score=6,
+                                    is_high_value=True
+                                )
+                                self.context_manager.add_discovered_endpoint(endpoint)
+                                discovered_paths.add(path)
+                                print(f"    [发现] {path}")
+                    except:
+                        pass
         
         duration = time.time() - start
         
