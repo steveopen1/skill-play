@@ -173,7 +173,6 @@ class AssetDiscovery:
         self._probe_parent_paths()
         
         # 更新上下文
-        self.ctx.tech_stack = self.ctx.tech_stack
         self.ctx.backend_reachable = len([p for p in self.ctx.parent_paths.values() if p.get('is_api')]) > 0
         self.ctx.nginx_fallback = not self.ctx.backend_reachable
         
@@ -196,15 +195,15 @@ class AssetDiscovery:
             
             html = r.text.lower()
             if 'vue' in html:
-                self.tech_stack['frontend'] = 'Vue.js'
+                self.ctx.tech_stack['frontend'] = 'Vue.js'
             if 'react' in html:
-                self.tech_stack['frontend'] = 'React'
+                self.ctx.tech_stack['frontend'] = 'React'
             if 'jquery' in html:
-                self.tech_stack['jquery'] = True
+                self.ctx.tech_stack['jquery'] = True
             if 'element' in html:
-                self.tech_stack['ui'] = 'ElementUI'
+                self.ctx.tech_stack['ui'] = 'ElementUI'
             if 'angular' in html:
-                self.tech_stack['frontend'] = 'Angular'
+                self.ctx.tech_stack['frontend'] = 'Angular'
             
             cors = r.headers.get('Access-Control-Allow-Origin', '未设置')
             print(f"  CORS: {cors}")
@@ -346,68 +345,23 @@ class AssetDiscovery:
             
         except Exception as e:
             print(f"  [WARN] 父路径探测失败: {e}")
-    
-    def _fallback_js_analysis(self):
-        """回退到 V35JSAnalyzer"""
-        try:
-            from core.deep_api_tester_v55 import V35JSAnalyzer
-            
-            js_analyzer = V35JSAnalyzer(self.target, self.session)
-            
-            for js_url in self.js_files:
-                result = js_analyzer.analyze_js(js_url)
-                
-                for ep in result['endpoints']:
-                    path = ep.url.replace(self.target.rstrip('/'), '')
-                    self.endpoints.append({
-                        'path': path,
-                        'method': ep.method,
-                        'params': [],
-                        'source': f'v35js_{ep.discovered_by}',
-                        'semantic_type': '',
-                        'has_params': False,
-                    })
-            
-            # 去重
-            seen = set()
-            unique = []
-            for ep in self.endpoints:
-                key = f"{ep['method']}:{ep['path']}"
-                if key not in seen:
-                    seen.add(key)
-                    unique.append(ep)
-            self.endpoints = unique
-            
-        except Exception as e:
-            print(f"  [WARN] V35JSAnalyzer 也失败: {e}")
-    
-    def _probe_parent_paths(self):
-        """探测父路径"""
-        if not self.api_parser:
-            return
-        
-        print(f"\n  [父路径探测] 开始探测...")
-        
-        self.parent_paths = self.api_parser.probe_parent_paths()
-        
-        # 统计可访问的 API 路径
-        accessible = {k: v for k, v in self.parent_paths.items() if v.get('is_api')}
-        print(f"  [父路径探测] 发现 {len(accessible)} 个可访问的 API 路径")
 
 
 class VulnerabilityTester:
     """阶段 2: 多维度漏洞分析"""
     
-    def __init__(self, target: str, session, endpoints: List):
-        self.target = target
-        self.session = session
-        self.endpoints = endpoints
-        self.vulnerabilities = []
+    def __init__(self, ctx: TestContext):
+        self.ctx = ctx
+        self.target = ctx.target
+        self.session = ctx.session
     
     def run(self) -> List:
         """执行漏洞测试"""
         print("[2] 多维度漏洞分析")
         print("-" * 70)
+        
+        # 使用上下文中所有端点（包括 Hook 到的）
+        self.endpoints = self.ctx.get_all_endpoints()
         
         # 2.1 SQL 注入测试
         self._test_sqli()
@@ -433,10 +387,10 @@ class VulnerabilityTester:
         # 2.8 IDOR 测试
         self._test_idor()
         
-        print(f"\n  发现漏洞: {len(self.vulnerabilities)}")
+        print(f"\n  发现漏洞: {len(self.ctx.vulnerabilities)}")
         print()
         
-        return self.vulnerabilities
+        return self.ctx.vulnerabilities
     
     def _test_sqli(self):
         """SQL 注入测试"""
@@ -464,7 +418,7 @@ class VulnerabilityTester:
                     
                     sqli_indicators = ['sql', 'syntax', 'mysql', 'oracle', 'error', 'sqlite']
                     if any(ind in r.text.lower() for ind in sqli_indicators):
-                        self.vulnerabilities.append({
+                        self.ctx.add_vulnerability({
                             'type': 'SQL Injection',
                             'severity': 'CRITICAL',
                             'endpoint': url,
@@ -502,7 +456,7 @@ class VulnerabilityTester:
                     r = self.session.get(test_url, timeout=5)
                     
                     if payload in r.text:
-                        self.vulnerabilities.append({
+                        self.ctx.add_vulnerability({
                             'type': 'XSS (Reflected)',
                             'severity': 'HIGH',
                             'endpoint': url,
@@ -529,7 +483,7 @@ class VulnerabilityTester:
                     r = self.session.get(test_url, timeout=5)
                     
                     if 'root:' in r.text or '[extensions]' in r.text:
-                        self.vulnerabilities.append({
+                        self.ctx.add_vulnerability({
                             'type': 'Path Traversal',
                             'severity': 'HIGH',
                             'endpoint': url,
@@ -563,7 +517,7 @@ class VulnerabilityTester:
                         # 避免误报，只在实际内容中检测
                         content_sample = r.text[:1000].lower()
                         if content_sample.count(pattern) > 2:
-                            self.vulnerabilities.append({
+                            self.ctx.add_vulnerability({
                                 'type': 'Sensitive Data Exposure',
                                 'severity': severity,
                                 'endpoint': url,
@@ -589,7 +543,7 @@ class VulnerabilityTester:
                 if r.status_code == 200 and len(r.text) > 100:
                     ct = r.headers.get('Content-Type', '')
                     if 'json' in ct.lower() or '{' in r.text[:100]:
-                        self.vulnerabilities.append({
+                        self.ctx.add_vulnerability({
                             'type': 'Authentication Bypass',
                             'severity': 'HIGH',
                             'endpoint': path,
@@ -609,7 +563,7 @@ class VulnerabilityTester:
                 r = self.session.post(url, json={'query': '{__schema{types{name}}}'}, timeout=5)
                 
                 if r.status_code == 200 and 'data' in r.text:
-                    self.vulnerabilities.append({
+                    self.ctx.add_vulnerability({
                         'type': 'GraphQL Introspection Enabled',
                         'severity': 'MEDIUM',
                         'endpoint': path,
@@ -643,7 +597,7 @@ class VulnerabilityTester:
                     
                     # 检查响应是否变化
                     if r.status_code != 429:  # 没有 rate limit
-                        self.vulnerabilities.append({
+                        self.ctx.add_vulnerability({
                             'type': 'Brute Force Risk',
                             'severity': 'MEDIUM',
                             'endpoint': path,
@@ -665,7 +619,7 @@ class VulnerabilityTester:
                 if r.status_code == 200:
                     ct = r.headers.get('Content-Type', '')
                     if 'json' in ct.lower():
-                        self.vulnerabilities.append({
+                        self.ctx.add_vulnerability({
                             'type': 'Potential IDOR',
                             'severity': 'MEDIUM',
                             'endpoint': path,
@@ -903,7 +857,7 @@ def run_skill(target: str) -> Dict:
     print("[4] 生成报告")
     print("-" * 70)
     
-    report = ReportGenerator.generate_from_context(ctx)
+    report = ReportGenerator.generate(ctx.__dict__)
     print(report)
     
     report_file = f"security_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
@@ -912,7 +866,7 @@ def run_skill(target: str) -> Dict:
     
     print(f"\n报告已保存: {report_file}")
     
-    return ctx.to_dict()
+    return vars(ctx)
 
 
 def _run_fuzzing(ctx: TestContext):
