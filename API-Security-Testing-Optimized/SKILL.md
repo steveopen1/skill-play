@@ -33,9 +33,10 @@ trigger:
 ```
 遇到Playwright不可用：
 1. 尝试 pip install playwright && playwright install chromium
-2. 尝试使用MCP工具: headless_browser
-3. 尝试其他方案: selenium, pyppeteer
-4. 最后才使用 requests 静态解析
+2. 尝试 playwright install-deps chromium  # 安装系统依赖（容易被忽略）
+3. 尝试使用MCP工具: headless_browser
+4. 尝试其他方案: selenium, pyppeteer
+5. 最后才使用 requests 静态解析
 
 遇到requests不可用：
 1. 尝试 pip install requests
@@ -64,6 +65,24 @@ trigger:
 发现登录接口 → 立即测试注入/爆破
 ```
 
+### 发现即测的例外
+
+**以下情况需要先验证，再深入：**
+
+```
+1. 发现返回200但内容异常
+   → 不要直接报告漏洞
+   → 先验证：是真实数据还是WAF拦截页？
+
+2. 发现可疑的响应差异
+   → 不要直接报告漏洞
+   → 先多次请求确认差异是否稳定
+
+3. 发现疑似敏感信息
+   → 不要直接报告漏洞
+   → 先确认：这是业务数据还是测试数据？
+```
+
 ### 测试优先级
 
 当你发现多个问题时，按这个顺序：
@@ -74,14 +93,6 @@ trigger:
 3. 业务逻辑漏洞（如越权、支付篡改）
 4. 枚举类漏洞（如用户枚举）
 ```
-
----
-
-# API 安全测试 Skill
-
-> **重要说明**：
-> 本 Skill 是大模型的"思维指导"，不是执行脚本。
-> 大模型应该理解检测思路，自己决定如何执行。
 
 ---
 
@@ -196,6 +207,26 @@ phone         → 可用于用户枚举
 email         → 可用于钓鱼
 ```
 
+### 响应类型分类（重要）
+
+**不同响应类型代表不同含义：**
+
+| 响应类型 | 特征 | 含义 |
+|----------|------|------|
+| JSON对象 | `{"code":200,"data":{...}}` | 真实API响应 |
+| JSON数组 | `[{"id":1,...},...]` | 真实数据列表 |
+| HTML页面 | `<!DOCTYPE html>...` | SPA路由/WAF/错误页 |
+| 空响应 | 长度<50字节 | 可能是错误/空数据 |
+| 重定向 | HTTP 301/302 | 需要认证/跳转 |
+
+**判断逻辑：**
+```
+1. 检查Content-Type: 是application/json还是text/html？
+2. 检查响应长度: <100字节通常是错误响应
+3. 检查响应内容: 是否包含< DOCTYPE html？
+4. 对比正常请求: 相同接口的响应应该相似
+```
+
 ### 响应分析思维
 
 当你看到响应时：
@@ -205,6 +236,60 @@ email         → 可用于钓鱼
 3. 有ID类字段吗？ → 尝试遍历
 4. 有手机号吗？ → 尝试用户枚举
 5. 有订单号吗？ → 尝试越权操作
+```
+
+---
+
+## 漏洞验证闭环
+
+### 三步验证流程
+
+```
+第一步：发现 (Discover)
+  - 发现可疑的响应差异
+  - 发现异常的状态码
+  - 发现敏感信息暴露
+
+第二步：分析 (Analyze)
+  - 多次请求确认差异稳定
+  - 对比正常请求和异常请求
+  - 检查是否是WAF/路由/认证导致
+
+第三步：验证 (Verify)
+  - 确认为漏洞 → 收集证据 → 报告
+  - 排除为误报 → 记录原因 → 继续扫描
+```
+
+### 验证检查清单（10个维度）
+
+```
+□ 维度1: 响应类型 - 是JSON还是HTML？（HTML可能是WAF）
+□ 维度2: 状态码 - 是否合理？
+□ 维度3: 响应长度 - 是否过短？（可能是拦截）
+□ 维度4: WAF拦截 - 是否为WAF/安全设备？
+□ 维度5: 敏感信息 - 是否包含password/token/secret？
+□ 维度6: 一致性 - 多次请求响应是否一致？
+□ 维度7: SQL注入 - 是否包含SQL错误特征？
+□ 维度8: IDOR - 是否返回用户/业务数据？
+□ 维度9: 认证绕过 - 是否返回token/session？
+□ 维度10: 信息泄露 - 是否泄露非公开信息？
+```
+
+### 常见误报识别
+
+```
+这些不是漏洞（识别为误报）：
+1. HTTP 200 返回 HTML 页面
+   → 可能是WAF拦截页/SPA路由/默认错误页
+   → 验证：是否是JSON格式的业务数据？
+
+2. 响应长度完全相同但返回"登录失效"
+   → 说明后端有正确的认证检查
+   → 不是漏洞，是安全防护有效
+
+3. 所有ID查询返回相同响应
+   → 可能是统一错误处理
+   → 验证：是否真的返回了不同的业务数据？
 ```
 
 ---
@@ -224,6 +309,9 @@ email         → 可用于钓鱼
 3. 尝试修改他人资料 → POST /api/user/update
 4. 查看他人订单 → GET /api/order/list?userId=xxx
 5. 尝试退款 → POST /api/refund (用他人的orderNo)
+
+利用链：
+用户枚举 → 获取userId → 查订单 → 退款
 ```
 
 ### 发现token泄露后的推理
@@ -256,7 +344,7 @@ token泄露 → 用token访问敏感接口 → 越权操作
 4. 有退款接口吗？ → 尝试 /api/refund?orderNo=xxx
 
 利用链：
-用户枚举 → 获取userId → 查订单 → 退款
+用户枚举 → 获取userId → 查订单 → 获取orderNo → 退款
 ```
 
 ---
@@ -267,7 +355,7 @@ token泄露 → 用token访问敏感接口 → 越权操作
 
 | 方法 | 测试重点 |
 |------|----------|
-| GET | 参数遍历、IDOR、信息泄露 |
+| GET | 参数遍历、IDOR，信息泄露 |
 | POST | 认证绕过、业务逻辑、注入 |
 | PUT | 资源篡改、越权修改 |
 | DELETE | 资源删除、越权删除 |
@@ -389,74 +477,44 @@ token泄露 → 用token访问敏感接口 → 越权操作
 
 ---
 
-## 推理式测试流程
-
-### 第一步：发现端点
-
-不要急着测试，先理解发现了什么：
-
-```
-你发现的端点列表：
-- /api/login        → 认证入口
-- /api/user/info    → 用户信息
-- /api/order/list   → 订单列表
-- /api/pay/refund   → 退款接口
-
-思考这些接口的关系：
-login → 获取token → 用token访问 user/info, order/list
-refund → 需要订单 → 需要先有orderNo
-```
-
-### 第二步：理解数据流
-
-```
-思考数据怎么流动的：
-1. 用户登录 → 获得userId和token
-2. 用userId查询用户信息
-3. 用userId查询用户订单
-4. 用orderNo进行支付/退款
-
-每个环节都可能出问题：
-- login可能被绕过
-- user/info可能泄露信息
-- order/list可能存在越权
-- refund可能缺少校验
-```
-
-### 第三步：构造攻击链
-
-```
-利用发现构造利用链：
-
-发现1：用户枚举
-  → 能获取userId列表
-
-发现2：订单接口
-  → 用userId查订单
-
-发现3：订单详情泄露
-  → 获取orderNo
-
-发现4：退款接口
-  → 用orderNo退款
-
-组合成攻击链：
-用户枚举 → 查订单 → 获取orderNo → 退款
-```
-
-### 第四步：验证并报告
-
-```
-验证漏洞时思考：
-1. 这个漏洞是真的吗？ → 再测一次确认
-2. 影响有多大？ → 能利用吗？有实际危害吗？
-3. 怎么利用？ → 提供PoC
-4. 如何修复？ → 提出修复建议
-```
-
----
-
 ## 特殊情况处理
+
+### 遇到WAF/安全设备时
+
+```
+识别特征：
+- 所有请求返回相似的HTML页面
+- 响应包含"拦截"、"安全"、"访问受限"等关键词
+- 响应内容与实际API无关
+
+处理方法：
+1. 识别为WAF拦截，不是漏洞
+2. 记录"存在WAF防护"作为安全能力
+3. 可以尝试降低请求频率绕过
+
+判断逻辑：
+- 请求1: 返回业务JSON = 正常
+- 请求2: 返回HTML拦截页 = WAF
+- 请求3: 返回业务JSON = 恢复
+```
+
+### 遇到SPA应用时
+
+```
+识别特征：
+- /api/* 路径返回HTML页面
+- 响应内容是前端框架代码
+- 不是真实的API端点
+
+处理方法：
+1. 通过JS源码分析获取真实API配置
+2. 使用无头浏览器触发动态API请求
+3. 不要对SPA路由的/api/*路径直接测试
+
+判断逻辑：
+- GET /api/user/info 返回HTML = SPA前端路由
+- GET /api/user/info 返回JSON = 真实API
+```
 
 ### 遇到加密/混淆的数据时
 
@@ -494,20 +552,55 @@ refund → 需要订单 → 需要先有orderNo
 > - 根据测试阶段动态调整
 > - 可以只用部分模块，也可以组合使用
 
+### 目录结构
+
+```
+core/                              # 核心能力池（原子化）
+├── collectors/                     # 信息采集能力
+│   ├── http_client.py            # HTTP请求能力
+│   ├── js_parser.py              # JS源码解析
+│   └── browser_collect.py         # 无头浏览器采集
+├── analyzers/                     # 分析能力
+│   ├── api_parser.py             # API端点解析
+│   ├── response_analyzer.py       # 响应类型分析
+│   └── sensitive_finder.py       # 敏感信息发现
+├── testers/                       # 测试能力
+│   ├── sqli_tester.py           # SQL注入测试
+│   ├── idor_tester.py           # 越权测试
+│   ├── auth_tester.py           # 认证测试
+│   ├── jwt_tester.py            # JWT测试
+│   └── fuzz_tester.py           # 模糊测试
+├── verifiers/                    # 验证能力
+│   ├── vuln_verifier.py         # 漏洞验证（10维度）
+│   └── response_diff.py         # 响应差异对比
+└── utils/                        # 工具能力
+    ├── prerequisite.py          # 依赖检查
+    └── payload_lib.py          # Payload库
+```
+
 ### 能力池模块参考
 
-| 阶段 | 可用模块 | 何时使用 |
-|------|----------|----------|
-| 发现 | `advanced_recon.py` | Swagger/子域名枚举 |
-| 发现 | `api_parser.py` | JS解析 |
-| 发现 | `dynamic_api_analyzer.py` | SPA应用 |
-| 发现 | `http_client.py` | 快速探测 |
-| 测试 | `api_fuzzer.py` | 模糊测试 |
-| 测试 | `deep_api_tester_v35.py` | 深度测试 |
-| 测试 | `testing_loop.py` | 循环测试 |
-| 验证 | `browser_tester.py` | 浏览器验证 |
-| 辅助 | `prerequisite.py` | 依赖检查 |
-| 辅助 | `cloud_storage_tester.py` | 云存储 |
+| 阶段 | 可用模块 | 路径 | 何时使用 |
+|------|----------|------|----------|
+| 发现 | `advanced_recon.py` | `core/advanced_recon.py` | Swagger/子域名枚举 |
+| 发现 | `api_parser.py` | `core/api_parser.py` | JS解析 |
+| 发现 | `dynamic_api_analyzer.py` | `core/dynamic_api_analyzer.py` | SPA应用 |
+| 发现 | `http_client.py` | `core/collectors/http_client.py` | 快速探测 |
+| 发现 | `js_parser.py` | `core/collectors/js_parser.py` | 从JS提取API |
+| 发现 | `browser_collect.py` | `core/collectors/browser_collect.py` | 无头浏览器采集 |
+| 分析 | `response_analyzer.py` | `core/analyzers/response_analyzer.py` | 响应类型识别/验证 |
+| 分析 | `sensitive_finder.py` | `core/analyzers/sensitive_finder.py` | 敏感信息发现 |
+| 测试 | `api_fuzzer.py` | `core/api_fuzzer.py` | 模糊测试 |
+| 测试 | `sqli_tester.py` | `core/testers/sqli_tester.py` | SQL注入测试 |
+| 测试 | `idor_tester.py` | `core/testers/idor_tester.py` | 越权测试 |
+| 测试 | `auth_tester.py` | `core/testers/auth_tester.py` | 认证绕过测试 |
+| 测试 | `jwt_tester.py` | `core/testers/jwt_tester.py` | JWT测试 |
+| 测试 | `deep_api_tester_v35.py` | `core/deep_api_tester_v35.py` | 深度测试 |
+| 测试 | `testing_loop.py` | `core/testing_loop.py` | 循环测试 |
+| 验证 | `vuln_verifier.py` | `core/verifiers/vuln_verifier.py` | 漏洞验证(10维度) |
+| 验证 | `response_diff.py` | `core/verifiers/response_diff.py` | 响应对比 |
+| 辅助 | `prerequisite.py` | `core/utils/prerequisite.py` | 依赖检查 |
+| 辅助 | `cloud_storage_tester.py` | `core/cloud_storage_tester.py` | 云存储 |
 
 ### 调用原则
 
@@ -518,27 +611,150 @@ refund → 需要订单 → 需要先有orderNo
 4. 渐进式：先轻量后深度
 5. 自主编写：特殊情况下可直接编写测试脚本
 6. 扩展能力：基于能力池编写扩展脚本
+7. 验证优先：发现异常先验证再报告
 ```
 
-### 特殊情况下可自主编写脚本
+### 能力输入输出规范
+
+**采集能力：**
+```
+http_client: 输入{url, method, headers, body} → 输出{status, headers, body, elapsed}
+js_parser: 输入{html, js_urls, base_url} → 输出{api_patterns, base_urls,tokens, endpoints}
+browser_collect: 输入{url, wait_until, interact} → 输出{apis, storage, forms, page_title}
+```
+
+**分析能力：**
+```
+response_analyzer: 输入{response, expected_type} → 输出{type, is_suspicious,sensitive_fields, parsed_json}
+sensitive_finder: 输入{content, check_fields} → 输出{found, severity}
+```
+
+**测试能力：**
+```
+sqli_tester: 输入{target_url, method, param_name, payloads} → 输出{vulnerable, payload_used, error_detected}
+idor_tester: 输入{target_url, param_name, test_ids, auth_token} → 输出{vulnerable, leaked_ids, severity}
+auth_tester: 输入{login_url, test_mode, max_attempts} → 输出{vulnerable, bypass_payload, weak_credential}
+```
+
+**验证能力：**
+```
+vuln_verifier: 输入{type, original_request, suspicious_response} → 输出{verified, is_false_positive, reason, dimensions}
+```
+
+### 能力组合模式
 
 ```
-当能力池模块不满足需求时：
-1. 直接编写测试脚本
-2. 基于能力池模块进行扩展
-3. 组合多个能力池模块
-4. 参考能力池代码编写新功能
+SPA应用：browser_collect → api_parser → idor_tester → vuln_verifier (10维度验证)
+传统Web：http_client → js_parser → sqli_tester → vuln_verifier
+高安全目标：browser_collect → response_analyzer → fuzz_tester (低速) → vuln_verifier
+快速扫描：http_client → response_analyzer → sqli_tester → vuln_verifier
 ```
+
+---
+
+## examples/ 目录结构
+
+```
+examples/                              # 组合示例
+├── usage-examples.md                   # 基础使用示例
+├── target-based-combos.md            # 按目标组合示例
+│   ├── 示例1: SPA应用完整测试链
+│   ├── 示例2: 传统Web API快速扫描
+│   ├── 示例3: 高安全性目标测试
+│   ├── 示例4: 按漏洞类型选择能力
+│   └── 示例5: 自定义能力组合
+└── vulnerability-chain.md           # 攻击链组合
+```
+
+### 按目标类型组合
+
+| 目标 | 发现 | 分析 | 测试 | 验证 |
+|------|------|------|------|------|
+| SPA应用 | browser_collect | api_parser, response_analyzer | idor_tester, sqli_tester | vuln_verifier (10维度) |
+| 传统Web | http_client, js_parser | api_parser | sqli_tester, auth_tester | vuln_verifier |
+| 高安全目标 | browser_collect | response_analyzer | fuzz_tester (低速) | response_diff |
+| 快速扫描 | http_client | response_analyzer | sqli_tester | vuln_verifier |
+| GraphQL | browser_collect | graphql_parser | sqli_tester (GraphQL专用) | vuln_verifier |
+
+---
+
+## references/ 目录结构
+
+```
+references/                              # 参考资料
+├── rest-guidance.md                    # REST API测试指导
+├── graphql-guidance.md                # GraphQL测试指导
+├── severity-model.md                  # 漏洞评级模型
+├── validation.md                      # 验证方法论
+├── asset-discovery.md                # 资产发现指导
+├── test-matrix.md                    # 测试矩阵
+└── report-template.md                # 报告模板
+```
+
+---
+
+## resources/ 目录结构
+
+```
+resources/                              # 资源文件
+├── sqli.json                         # SQL注入Payload库
+├── xss.json                         # XSS Payload库
+└── dom_xss.json                     # DOM XSS Payload库
+```
+
+---
+
+## templates/ 目录结构
+
+```
+templates/                              # 测试模板
+├── api_test.yaml                     # API测试模板
+├── auth_test.yaml                    # 认证测试模板
+└── vuln_scan.yaml                    # 漏洞扫描模板
+```
+
+---
 
 完成测试后，按以下格式报告：
 
 ```markdown
+## 测试概要
+
+| 项目 | 数量 |
+|------|------|
+| 扫描目标 | xxx |
+| 发现可疑点 | x |
+| 验证确认 | x |
+| 排除误报 | x |
+
+## 能力使用记录
+
+| 阶段 | 使用能力 | 输入 | 输出 |
+|------|----------|------|------|
+| 采集 | browser_collect | url=xxx | apis=[...] |
+| 分析 | response_analyzer | status=200, body=... | type=json |
+| 测试 | idor_tester | userId=[1,2] | vulnerable=true |
+| 验证 | vuln_verifier (10维度) | type=idor | verified=true |
+
 ## 漏洞列表
 
-| 编号 | 类型 | 严重性 | 端点 | 参数 | PoC | 影响 |
-|------|------|--------|------|------|-----|------|
-| 1 | 敏感信息泄露 | HIGH | /api/user/info | - | GET /api/user/info 返回password | 可获取用户密码 |
-| 2 | IDOR | HIGH | /api/order/list | userId | GET /api/order/list?userId=123 | 可查看他人订单 |
+| 编号 | 类型 | 严重性 | 端点 | PoC | 验证维度 |
+|------|------|--------|------|-----|---------|
+| 1 | 敏感信息泄露 | HIGH | /api/user/info | GET /api/user/info 返回password字段 | 维度1,5,10 |
+| 2 | IDOR | HIGH | /api/order/list | GET /api/order/list?userId=123 | 维度1,3,6,8 |
+
+## 验证维度详情
+
+| 漏洞 | 维度1响应类型 | 维度3长度 | 维度5敏感信息 | 维度8业务数据 |
+|------|-------------|---------|-------------|-------------|
+| #1 | json ✓ | 正常 ✓ | password泄露 ✓ | - |
+| #2 | json ✓ | 正常 ✓ | - | userId泄露 ✓ |
+
+## 误报记录
+
+| 可疑点 | 初步判断 | 验证维度 | 排除原因 |
+|--------|----------|----------|----------|
+| /api/admin/users返回200 | 可能未授权 | 维度1,4,6 | 返回HTML页面+WAF特征，是WAF拦截页 |
 
 ## 漏洞链构造
 
@@ -563,7 +779,8 @@ refund → 需要订单 → 需要先有orderNo
 1. **不只是测试，要理解** - 理解接口在做什么
 2. **不只是单个漏洞，要构造链** - 发现一个点，思考能做什么
 3. **不只是工具，要用脑子** - 思考攻击者会怎么做
-4. **不只是发现，要验证** - 确认漏洞真实存在
+4. **不只是发现，要验证** - 确认漏洞真实存在（10维度验证）
+5. **不只是利用，要闭环** - 发现→分析→验证→确认/排除
 
 ### 检测口诀
 
@@ -576,6 +793,23 @@ refund → 需要订单 → 需要先有orderNo
 看到订单想越权
 看到token想泄露
 看到修改想权限
+看到异常想验证
+看到200想确认
+```
+
+### 验证口诀（10维度）
+
+```
+维度1看类型：JSON业务HTML拦截
+维度2看状态：200成功4xx客户端
+维度3看长度：过短拦截过长数据
+维度4看WAF：安全设备特征识别
+维度5看敏感：password token secret
+维度6看一致：多次请求是否同
+维度7SQL注入：错误特征要确认
+维度8用户数据：业务信息才真实
+维度9认证绕过：token返回才算
+维度10信息泄露：非公开信息才算
 ```
 
 ---
@@ -583,6 +817,11 @@ refund → 需要订单 → 需要先有orderNo
 ## 参考资源
 
 如有疑问，可参考：
-- OWASP API Security Top 10
-- CVSS 漏洞评分标准
-- 各语言 SQL 注入 payload 集
+- OWASP API Security Top 10 - `references/`
+- REST API测试指导 - `references/rest-guidance.md`
+- GraphQL测试指导 - `references/graphql-guidance.md`
+- 漏洞评级模型 - `references/severity-model.md`
+- 验证方法论 - `references/validation.md`
+- Payload库 - `resources/*.json`
+- 测试模板 - `templates/*.yaml`
+- 使用示例 - `examples/`
