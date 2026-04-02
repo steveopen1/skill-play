@@ -43,6 +43,7 @@ class ParamLocation(Enum):
     URL = "url"
     FORM = "form"
     JSON = "json"
+    PARAMS = "params"  # axios params config
     HEADER = "header"
 
 
@@ -187,10 +188,20 @@ class APIEndpointParser:
                 if method not in ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']:
                     continue
                 
+                # 使用混合方法提取参数
+                url_params = self._extract_params_from_url(url)
+                js_params = self._extract_params_from_js_context(content, url)
+                
+                # 合并参数，去重
+                all_params = url_params.copy()
+                for jp in js_params:
+                    if jp.name not in [p.name for p in all_params]:
+                        all_params.append(jp)
+                
                 endpoint = ParsedEndpoint(
                     path=url,
                     method=method,
-                    params=params,
+                    params=all_params,
                     source=f'axios_{ptype}',
                     raw_url=url,
                     semantic_type=self._infer_semantic_type(url)
@@ -242,12 +253,20 @@ class APIEndpointParser:
             matches = re.findall(pattern, content)
             for url in matches:
                 if self._is_valid_api_path(url):
-                    params = self._extract_params_from_url(url)
+                    # 使用混合方法提取参数
+                    url_params = self._extract_params_from_url(url)
+                    js_params = self._extract_params_from_js_context(content, url)
+                    
+                    # 合并参数，去重
+                    all_params = url_params.copy()
+                    for jp in js_params:
+                        if jp.name not in [p.name for p in all_params]:
+                            all_params.append(jp)
                     
                     endpoint = ParsedEndpoint(
                         path=url,
                         method=default_method,
-                        params=params,
+                        params=all_params,
                         source=ptype,
                         raw_url=url,
                         semantic_type=self._infer_semantic_type(url)
@@ -299,7 +318,7 @@ class APIEndpointParser:
         """从 URL 中提取参数"""
         params = []
         
-        # 路径参数 {id}, :id, /{id}
+        # 1. 显式路径参数 {id}, :id
         path_patterns = [
             r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}',  # {id}
             r':([a-zA-Z_][a-zA-Z0-9_]*)',      # :id
@@ -308,9 +327,7 @@ class APIEndpointParser:
         for pattern in path_patterns:
             matches = re.findall(pattern, url)
             for param_name in matches:
-                # 推断类型
                 data_type = self._infer_param_type(param_name)
-                
                 params.append(APIParam(
                     name=param_name,
                     param_type=ParamType.PATH,
@@ -319,14 +336,47 @@ class APIEndpointParser:
                     data_type=data_type
                 ))
         
-        # 查询参数 ?key=value
+        # 2. RESTful 风格参数推断 (基于常见模式)
+        # 例如 /users/123 -> id, /users/abc123/profile -> id, /page/1 -> page
+        restful_patterns = [
+            (r'/users?/([a-zA-Z0-9_-]+)/?', 'user_id', 'id'),
+            (r'/orders?/([a-zA-Z0-9_-]+)/?', 'order_id', 'id'),
+            (r'/products?/([a-zA-Z0-9_-]+)/?', 'product_id', 'id'),
+            (r'/categories?/([a-zA-Z0-9_-]+)/?', 'category_id', 'id'),
+            (r'/files?/([a-zA-Z0-9_-]+)/?', 'file_id', 'id'),
+            (r'/records?/([a-zA-Z0-9_-]+)/?', 'record_id', 'id'),
+            (r'/ids?/([a-zA-Z0-9_-]+)/?', 'ids', 'id'),
+            (r'/ids,([a-zA-Z0-9_-]+)', 'ids', 'array'),
+            (r'/page/(\d+)', 'page', 'page'),
+            (r'/p/(\d+)', 'page', 'page'),
+            (r'/(\d+)/page', 'page', 'page'),
+            (r'/size/(\d+)', 'size', 'size'),
+            (r'/limit/(\d+)', 'limit', 'limit'),
+            (r'/offset/(\d+)', 'offset', 'offset'),
+        ]
+        
+        seen_params = {p.name for p in params}
+        for pattern, param_name, param_type in restful_patterns:
+            if param_name not in seen_params:
+                match = re.search(pattern, url)
+                if match:
+                    params.append(APIParam(
+                        name=param_name,
+                        param_type=ParamType.PATH if param_type == 'id' else ParamType.QUERY,
+                        location=ParamLocation.URL,
+                        required=True,
+                        data_type=param_type
+                    ))
+                    seen_params.add(param_name)
+        
+        # 3. 查询参数 ?key=value
         if '?' in url:
             query_str = url.split('?')[1] if '?' in url else ''
             query_params = query_str.split('&')
             for qp in query_params:
                 if '=' in qp:
                     param_name = qp.split('=')[0]
-                    if param_name and param_name not in [p.name for p in params]:
+                    if param_name and param_name not in seen_params:
                         params.append(APIParam(
                             name=param_name,
                             param_type=ParamType.QUERY,
@@ -334,6 +384,71 @@ class APIEndpointParser:
                             required=False,
                             data_type='string'
                         ))
+                        seen_params.add(param_name)
+        
+        return params
+    
+    def _extract_params_from_js_context(self, content: str, api_path: str) -> List[APIParam]:
+        """
+        从 JavaScript 代码上下文中提取参数 (简化版正则)
+        
+        策略: 直接从 axios/fetch 调用模式中提取参数
+        """
+        params = []
+        
+        # 1. axios 调用参数模式
+        # axios.get('/path', { params: { id: 1, page: 1 } })
+        # axios.post('/path', { data: { name: 'xxx' } })
+        axios_patterns = [
+            (r'axios\.\w+\s*\(\s*["\']([^"\']+)["\']\s*,\s*\{([^}]+)\}', 'axios_config'),
+            (r'axios\.\w+\s*\(\s*["\']([^"\']+)["\']\s*,\s*\{([^}]+)\}\s*\)', 'axios_config'),
+        ]
+        
+        for pattern, ptype in axios_patterns:
+            matches = re.findall(pattern, content, re.DOTALL)
+            for match in matches:
+                if isinstance(match, tuple) and len(match) >= 2:
+                    path_from_code = match[0]
+                    config_str = match[1]
+                    
+                    # 如果这个配置匹配的路径包含我们要找的 api_path
+                    if api_path in path_from_code or path_from_code in api_path:
+                        # 提取参数
+                        param_names = re.findall(r'(\w+)\s*:', config_str)
+                        for param_name in param_names:
+                            if param_name not in [p.name for p in params]:
+                                # 判断参数位置
+                                location = ParamLocation.PARAMS if 'params' in config_str else ParamLocation.JSON
+                                params.append(APIParam(
+                                    name=param_name,
+                                    param_type=ParamType.QUERY if 'params' in config_str or 'query' in config_str else ParamType.BODY,
+                                    location=location,
+                                    required=True,
+                                    data_type=self._infer_param_type(param_name)
+                                ))
+        
+        # 2. 查找 fetch 调用
+        # fetch('/path?param1=value1&param2=value2')
+        if 'fetch' in content.lower():
+            fetch_pattern = r'fetch\s*\(\s*["\']([^"\']+)["\']'
+            fetch_matches = re.findall(fetch_pattern, content)
+            for fetch_url in fetch_matches:
+                if api_path in fetch_url or fetch_url in api_path:
+                    # 提取查询参数
+                    if '?' in fetch_url:
+                        query_str = fetch_url.split('?')[1]
+                        query_params = query_str.split('&')
+                        for qp in query_params:
+                            if '=' in qp:
+                                param_name = qp.split('=')[0]
+                                if param_name and param_name not in [p.name for p in params]:
+                                    params.append(APIParam(
+                                        name=param_name,
+                                        param_type=ParamType.QUERY,
+                                        location=ParamLocation.URL,
+                                        required=False,
+                                        data_type='string'
+                                    ))
         
         return params
     
