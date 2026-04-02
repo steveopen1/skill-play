@@ -187,10 +187,63 @@ class AssetDiscovery:
                     if line.strip():
                         print(f"  {line}")
             
+            # 如果静态分析发现的参数端点较少，尝试动态分析
+            static_param_count = sum(1 for ep in self.endpoints if ep.get('has_params') and ep.get('params'))
+            if static_param_count < 5:
+                print(f"\n  [动态分析] 静态分析参数较少 ({static_param_count})，尝试动态分析...")
+                self._run_dynamic_analysis()
+            
         except Exception as e:
             print(f"  [WARN] API 解析器失败: {e}")
             # 回退到旧方法
             self._fallback_js_analysis()
+    
+    def _run_dynamic_analysis(self):
+        """运行动态 API 分析"""
+        try:
+            from core.dynamic_api_analyzer import DynamicAPIAnalyzer
+            
+            analyzer = DynamicAPIAnalyzer(self.target)
+            
+            # 执行动态分析
+            results = analyzer.analyze(
+                interactions=['click', 'input', 'scroll'],
+                wait_time=3
+            )
+            
+            # 合并动态发现的端点
+            dynamic_endpoints = results.get('endpoints', [])
+            print(f"  [动态分析] 发现 {len(dynamic_endpoints)} 个端点")
+            
+            for ep in dynamic_endpoints:
+                # 检查是否已存在
+                path = ep.get('path', '')
+                method = ep.get('method', 'GET')
+                
+                exists = any(
+                    e.get('path') == path and e.get('method') == method
+                    for e in self.endpoints
+                )
+                
+                if not exists and path:
+                    self.endpoints.append({
+                        'path': path,
+                        'method': method,
+                        'params': ep.get('params', {}),
+                        'source': f"dynamic_{ep.get('source', 'unknown')}",
+                        'semantic_type': self._infer_semantic_type(path),
+                        'has_params': bool(ep.get('params')),
+                    })
+                    print(f"  [动态] {method} {path}: {list(ep.get('params', {}).keys())}")
+            
+            # 更新摘要
+            param_count = sum(1 for ep in self.endpoints if ep.get('has_params') and ep.get('params'))
+            print(f"  [动态分析] 更新后带参数端点: {param_count}")
+            
+        except ImportError:
+            print(f"  [动态分析] dynamic_api_analyzer 不可用")
+        except Exception as e:
+            print(f"  [动态分析] 失败: {e}")
     
     def _fallback_js_analysis(self):
         """回退到 V35JSAnalyzer"""
