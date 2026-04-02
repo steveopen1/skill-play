@@ -93,7 +93,7 @@ class PrerequisiteChecker:
 
 
 class AssetDiscovery:
-    """阶段 1: 资产发现"""
+    """阶段 1: 资产发现 (增强版)"""
     
     def __init__(self, target: str, session):
         self.target = target
@@ -101,6 +101,8 @@ class AssetDiscovery:
         self.endpoints = []
         self.js_files = []
         self.tech_stack = {}
+        self.parent_paths = {}
+        self.api_parser = None
     
     def run(self) -> Dict:
         """执行资产发现"""
@@ -110,29 +112,22 @@ class AssetDiscovery:
         # 1.1 目标探测
         self._probe_target()
         
-        # 1.2 JS 文件发现
-        self._discover_js_files()
+        # 1.2 使用增强版 API 解析器
+        self._parse_endpoints_with_api_parser()
         
-        # 1.3 V35JSAnalyzer 端点分析
-        self._analyze_js_endpoints()
-        
-        # 1.4 Swagger/API 文档发现
-        self._discover_swagger()
-        
-        # 1.5 智能路径猜测
-        self._intelligent_guess()
-        
-        # 1.6 SPA 检测
-        self._detect_spa()
+        # 1.3 父路径探测
+        self._probe_parent_paths()
         
         print(f"\n  发现端点: {len(self.endpoints)}")
+        print(f"  父路径: {len(self.parent_paths)}")
         print(f"  技术栈: {self.tech_stack}")
         print()
         
         return {
             'endpoints': self.endpoints,
             'js_files': self.js_files,
-            'tech_stack': self.tech_stack
+            'tech_stack': self.tech_stack,
+            'parent_paths': self.parent_paths,
         }
     
     def _probe_target(self):
@@ -140,11 +135,9 @@ class AssetDiscovery:
         try:
             r = self.session.get(self.target, timeout=10)
             
-            # 服务器指纹
             server = r.headers.get('Server', 'Unknown')
             print(f"  Server: {server}")
             
-            # 技术栈识别
             html = r.text.lower()
             if 'vue' in html:
                 self.tech_stack['frontend'] = 'Vue.js'
@@ -157,42 +150,50 @@ class AssetDiscovery:
             if 'angular' in html:
                 self.tech_stack['frontend'] = 'Angular'
             
-            # CORS 检测
-            cors_origin = r.headers.get('Access-Control-Allow-Origin', '未设置')
-            print(f"  CORS: {cors_origin}")
+            cors = r.headers.get('Access-Control-Allow-Origin', '未设置')
+            print(f"  CORS: {cors}")
             
         except Exception as e:
             print(f"  [WARN] 目标探测失败: {e}")
     
-    def _discover_js_files(self):
-        """发现 JS 文件"""
+    def _parse_endpoints_with_api_parser(self):
+        """使用增强版 API 解析器"""
         try:
-            r = self.session.get(self.target, timeout=10)
-            patterns = [
-                r'<script[^>]+src=["\']([^"\']+\.js[^"\']*)["\']',
-            ]
+            from core.api_parser import APIEndpointParser
             
-            for pattern in patterns:
-                matches = re.findall(pattern, r.text)
-                for match in matches:
-                    if match.startswith('/'):
-                        url = self.target.rstrip('/') + match
-                    elif match.startswith('http'):
-                        url = match
-                    else:
-                        continue
-                    
-                    if self.target.replace('http://', '').replace('https://', '').split('/')[0] in url:
-                        if url not in self.js_files:
-                            self.js_files.append(url)
+            self.api_parser = APIEndpointParser(self.target, self.session)
+            js_files = self.api_parser.discover_js_files()
+            self.js_files = js_files
+            print(f"  发现 JS 文件: {len(js_files)}")
             
-            print(f"  发现 JS 文件: {len(self.js_files)}")
+            # 解析端点
+            parsed_endpoints = self.api_parser.parse_js_files(js_files)
+            
+            # 转换为字典格式
+            for ep in parsed_endpoints:
+                self.endpoints.append({
+                    'path': ep.path,
+                    'method': ep.method,
+                    'params': [{'name': p.name, 'type': p.param_type.value, 'required': p.required} for p in ep.params],
+                    'source': ep.source,
+                    'semantic_type': ep.semantic_type,
+                    'has_params': ep.has_params(),
+                })
+            
+            # 打印摘要
+            if self.api_parser:
+                summary = self.api_parser.get_endpoints_summary()
+                for line in summary.split('\n'):
+                    if line.strip():
+                        print(f"  {line}")
             
         except Exception as e:
-            print(f"  [WARN] JS 文件发现失败: {e}")
+            print(f"  [WARN] API 解析器失败: {e}")
+            # 回退到旧方法
+            self._fallback_js_analysis()
     
-    def _analyze_js_endpoints(self):
-        """使用 V35JSAnalyzer 分析端点"""
+    def _fallback_js_analysis(self):
+        """回退到 V35JSAnalyzer"""
         try:
             from core.deep_api_tester_v55 import V35JSAnalyzer
             
@@ -204,14 +205,13 @@ class AssetDiscovery:
                 for ep in result['endpoints']:
                     path = ep.url.replace(self.target.rstrip('/'), '')
                     self.endpoints.append({
-                        'url': ep.url,
                         'path': path,
                         'method': ep.method,
-                        'source': f'v35js_{ep.discovered_by}'
+                        'params': [],
+                        'source': f'v35js_{ep.discovered_by}',
+                        'semantic_type': '',
+                        'has_params': False,
                     })
-                
-                if result['endpoints']:
-                    print(f"  [V35JS] {js_url.split('/')[-1]}: 发现 {len(result['endpoints'])} 个端点")
             
             # 去重
             seen = set()
@@ -224,68 +224,20 @@ class AssetDiscovery:
             self.endpoints = unique
             
         except Exception as e:
-            print(f"  [WARN] V35JSAnalyzer 失败: {e}")
+            print(f"  [WARN] V35JSAnalyzer 也失败: {e}")
     
-    def _discover_swagger(self):
-        """发现 Swagger/API 文档"""
-        swagger_paths = [
-            '/swagger.json', '/swagger.yaml', '/api-docs',
-            '/v1/api-docs', '/doc.html', '/swagger-ui.html'
-        ]
+    def _probe_parent_paths(self):
+        """探测父路径"""
+        if not self.api_parser:
+            return
         
-        for path in swagger_paths:
-            url = self.target.rstrip('/') + path
-            try:
-                r = self.session.get(url, timeout=5)
-                if r.status_code == 200 and 'swagger' in r.text.lower():
-                    self.endpoints.append({
-                        'url': url,
-                        'path': path,
-                        'method': 'GET',
-                        'source': 'swagger'
-                    })
-                    print(f"  [Swagger] 发现: {path}")
-            except:
-                pass
-    
-    def _intelligent_guess(self):
-        """智能路径猜测"""
-        common_paths = [
-            '/api/users', '/api/user', '/api/admin', '/api/auth',
-            '/api/login', '/api/logout', '/api/profile', '/api/settings',
-            '/auth/login', '/auth/logout', '/auth/token',
-            '/user/info', '/user/list', '/user/profile',
-            '/admin/users', '/admin/config', '/admin/settings',
-        ]
+        print(f"\n  [父路径探测] 开始探测...")
         
-        for path in common_paths:
-            url = self.target.rstrip('/') + path
-            try:
-                r = self.session.get(url, timeout=3)
-                if r.status_code == 200:
-                    ct = r.headers.get('Content-Type', '')
-                    if 'json' in ct.lower() or '{' in r.text[:100]:
-                        self.endpoints.append({
-                            'url': url,
-                            'path': path,
-                            'method': 'GET',
-                            'source': 'intelligent_guess'
-                        })
-            except:
-                pass
-    
-    def _detect_spa(self):
-        """检测 SPA"""
-        try:
-            r = self.session.get(self.target, timeout=10)
-            if '#' in r.text or 'hash' in r.text.lower():
-                self.tech_stack['spa'] = True
-                print("  SPA: 是")
-            else:
-                self.tech_stack['spa'] = False
-                print("  SPA: 否")
-        except:
-            pass
+        self.parent_paths = self.api_parser.probe_parent_paths()
+        
+        # 统计可访问的 API 路径
+        accessible = {k: v for k, v in self.parent_paths.items() if v.get('is_api')}
+        print(f"  [父路径探测] 发现 {len(accessible)} 个可访问的 API 路径")
 
 
 class VulnerabilityTester:
@@ -748,10 +700,47 @@ def run_skill(target: str) -> Dict:
     disc_results = discovery.run()
     results['endpoints'] = disc_results['endpoints']
     results['tech_stack'] = disc_results['tech_stack']
+    results['parent_paths'] = disc_results.get('parent_paths', {})
     
     # 阶段 2: 漏洞分析
     tester = VulnerabilityTester(target, session, results['endpoints'])
     results['vulnerabilities'] = tester.run()
+    
+    # 阶段 2.5: Fuzzing (增强版)
+    print("[2.5] API Fuzzing")
+    print("-" * 70)
+    try:
+        from core.api_parser import APIEndpointParser, APIFuzzer, ParsedEndpoint, APIParam, ParamType, ParamLocation
+        
+        # 转换端点格式
+        parsed_eps = []
+        for ep_data in results['endpoints']:
+            ep = ParsedEndpoint(
+                path=ep_data['path'],
+                method=ep_data.get('method', 'GET'),
+                source=ep_data.get('source', ''),
+                semantic_type=ep_data.get('semantic_type', ''),
+            )
+            for p in ep_data.get('params', []):
+                ep.params.append(APIParam(
+                    name=p['name'],
+                    param_type=ParamType(p.get('type', 'path')),
+                    location=ParamLocation.URL,
+                    required=p.get('required', True)
+                ))
+            parsed_eps.append(ep)
+        
+        # 执行 fuzzing
+        fuzzer = APIFuzzer(target, session)
+        fuzz_results = fuzzer.fuzz_endpoints(parsed_eps, results.get('parent_paths', {}))
+        
+        # 合并 fuzzing 结果
+        results['vulnerabilities'].extend(fuzz_results)
+        print(f"  [Fuzzing] 发现 {len(fuzz_results)} 个问题")
+        
+    except Exception as e:
+        print(f"  [WARN] Fuzzing 失败: {e}")
+    print()
     
     # 阶段 3: 云存储测试
     cloud_tester = CloudStorageTester(target, session)
