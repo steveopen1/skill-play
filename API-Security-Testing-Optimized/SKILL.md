@@ -1103,8 +1103,6 @@ core/                              # 核心能力池（原子化）
 | **编排** | 攻击链推理 | `reasoning_engine.py` | `core/reasoning_engine.py` |
 | **编排** | 策略选择 | `strategy_pool.py` | `core/strategy_pool.py` |
 | **执行** | Skill执行 | `skill_executor*.py` | `core/skill_executor*.py` |
-| **执行** | API拦截 | `api_interceptor.py` | `core/api_interceptor.py` |
-| **执行** | 批量测试执行 | `runner.py` | `core/runner.py` |
 | **数据** | 数据模型 | `models.py` | `core/models.py` |
 | **测试** | 深度综合测试v35 | `deep_api_tester_v35.py` | `core/deep_api_tester_v35.py` |
 
