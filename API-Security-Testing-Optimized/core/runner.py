@@ -156,6 +156,34 @@ class AssetDiscovery:
         except Exception as e:
             print(f"  [WARN] 目标探测失败: {e}")
     
+    def _infer_semantic_type(self, path: str) -> str:
+        """推断路径的语义类型"""
+        path_lower = path.lower()
+        
+        mappings = {
+            'auth': ['/auth', '/login', '/logout', '/token', '/signin'],
+            'user': ['/user', '/profile', '/account', '/avatar'],
+            'admin': ['/admin', '/manage', '/system', '/config'],
+            'file': ['/file', '/upload', '/download', '/attachment', '/image'],
+            'order': ['/order', '/cart', '/checkout'],
+            'product': ['/product', '/goods', '/sku'],
+            'data': ['/data', '/statistics', '/report', '/analytics'],
+            'api': ['/api', '/v1', '/v2', '/rest'],
+            'search': ['/search', '/query', '/find'],
+            'list': ['/list', '/items', '/records'],
+            'detail': ['/detail', '/info', '/view'],
+            'create': ['/create', '/add', '/new'],
+            'update': ['/update', '/edit', '/modify'],
+            'delete': ['/delete', '/remove'],
+        }
+        
+        for semantic, keywords in mappings.items():
+            for keyword in keywords:
+                if keyword in path_lower:
+                    return semantic
+        
+        return 'unknown'
+    
     def _parse_endpoints_with_api_parser(self):
         """使用增强版 API 解析器"""
         try:
@@ -187,11 +215,9 @@ class AssetDiscovery:
                     if line.strip():
                         print(f"  {line}")
             
-            # 如果静态分析发现的参数端点较少，尝试动态分析
-            static_param_count = sum(1 for ep in self.endpoints if ep.get('has_params') and ep.get('params'))
-            if static_param_count < 5:
-                print(f"\n  [动态分析] 静态分析参数较少 ({static_param_count})，尝试动态分析...")
-                self._run_dynamic_analysis()
+            # 总是尝试动态分析来验证静态发现
+            print(f"\n  [动态分析] 启动动态分析验证...")
+            self._run_dynamic_analysis()
             
         except Exception as e:
             print(f"  [WARN] API 解析器失败: {e}")
@@ -206,10 +232,7 @@ class AssetDiscovery:
             analyzer = DynamicAPIAnalyzer(self.target)
             
             # 执行动态分析
-            results = analyzer.analyze(
-                interactions=['click', 'input', 'scroll'],
-                wait_time=3
-            )
+            results = analyzer.analyze_full(max_requests=100)
             
             # 合并动态发现的端点
             dynamic_endpoints = results.get('endpoints', [])
@@ -226,15 +249,22 @@ class AssetDiscovery:
                 )
                 
                 if not exists and path:
+                    # params 可能是列表或字典
+                    params_data = ep.get('params', [])
+                    if isinstance(params_data, list):
+                        params_dict = {p: True for p in params_data}
+                    else:
+                        params_dict = params_data
+                    
                     self.endpoints.append({
                         'path': path,
                         'method': method,
-                        'params': ep.get('params', {}),
+                        'params': params_dict,
                         'source': f"dynamic_{ep.get('source', 'unknown')}",
                         'semantic_type': self._infer_semantic_type(path),
-                        'has_params': bool(ep.get('params')),
+                        'has_params': bool(params_dict),
                     })
-                    print(f"  [动态] {method} {path}: {list(ep.get('params', {}).keys())}")
+                    print(f"  [动态] {method} {path}")
             
             # 更新摘要
             param_count = sum(1 for ep in self.endpoints if ep.get('has_params') and ep.get('params'))
