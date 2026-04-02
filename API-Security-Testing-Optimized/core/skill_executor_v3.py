@@ -189,6 +189,9 @@ class SKILLExecutorV3:
             target_host = urlparse(self.target).netloc
             for ep in self.dynamic_endpoints:
                 ep_path = ep.get('path', '')
+                # 跳过非API资源文件
+                if any(ext in ep_path.lower() for ext in ['.js', '.css', '.png', '.jpg', '.html', '.svg']):
+                    continue
                 if ep_path.startswith('http'):
                     ep_host = urlparse(ep_path).netloc
                     ep_path_only = urlparse(ep_path).path
@@ -198,8 +201,39 @@ class SKILLExecutorV3:
                             potential_prefix = '/' + '/'.join(parts[:2])
                             if potential_prefix not in ['/login', '/logout']:
                                 self.api_prefix = potential_prefix
-                                print(f"  [API Prefix] {self.api_prefix}")
+                                print(f"  [API Prefix] from dynamic: {self.api_prefix}")
                                 break
+            
+            # 从静态端点推断API前缀（备选方案）
+            if not self.api_prefix and self.static_endpoints:
+                # 静态端点如 /sys/user/getUserInfo 说明有 /sys/ 路径
+                # 需要推断完整的API前缀
+                static_paths = [ep.path for ep in self.static_endpoints[:10]]
+                
+                # 提取静态端点的共同前缀
+                common_prefix = ''
+                if static_paths:
+                    parts_list = [p.strip('/').split('/') for p in static_paths if p.startswith('/')]
+                    if parts_list:
+                        # 找共同的前两个路径段
+                        if len(parts_list[0]) >= 2:
+                            prefix_parts = [parts_list[0][0], parts_list[0][1]]
+                            common_prefix = '/' + '/'.join(prefix_parts)
+                
+                # 如果目标URL有子路径，尝试使用子路径作为API前缀
+                from urllib.parse import urlparse
+                target_path = urlparse(self.target).path.strip('/')
+                if target_path:
+                    # 目标URL的子路径可能是API前缀（如 /ipark-admin -> /ipark）
+                    target_base = target_path.replace('-admin', '').replace('-api', '')
+                    if target_base and not target_base.startswith('_'):
+                        self.api_prefix = '/' + target_base
+                    else:
+                        self.api_prefix = '/' + target_path.split('/')[0]
+                else:
+                    self.api_prefix = common_prefix or ''
+                
+                print(f"  [API Prefix] inferred: {self.api_prefix}")
             
             if count > 0:
                 self.has_dynamic_endpoints = True
