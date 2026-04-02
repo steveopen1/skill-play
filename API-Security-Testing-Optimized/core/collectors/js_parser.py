@@ -242,9 +242,9 @@ def extract_with_ast(js_content):
     except Exception as e:
         return {
             'error': f'AST parse failed: {str(e)[:100]}',
-            'fix_command': 'pip install --upgrade esprima'
+            'fix_command': 'pip install --upgrade esprima',
+            'fallback_available': True
         }
-        return fallback_result
 
 
 def extract_simplified(content):

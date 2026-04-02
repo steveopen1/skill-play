@@ -335,7 +335,7 @@ def browser_collect(config):
             result['apis'] = captured_apis
             
             # 【新增】登录即测：发现login请求时立即分析
-            login_test = analyze_login_requests(captured_apis, target)
+            login_test = analyze_login_requests(captured_apis, url)
             if login_test:
                 result['login_test_hint'] = login_test
             
