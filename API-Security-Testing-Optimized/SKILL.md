@@ -83,17 +83,46 @@ python3 -m core.runner <target> [选项]
 
 所有模块位于 `core/` 目录下。
 
+### 主要入口模块
+
 | 模块文件 | 功能 | 导入方式 |
 |---------|------|---------|
 | `core/runner.py` | SKILL.md 可执行入口 | `from core.runner import run_skill` |
+| `core/orchestrator.py` | 智能编排器 | `from core.orchestrator import EnhancedAgenticOrchestrator` |
+
+### 端点发现模块
+
+| 模块文件 | 功能 | 导入方式 |
+|---------|------|---------|
 | `core/api_parser.py` | 增强版 API 解析 | `from core.api_parser import APIEndpointParser` |
 | `core/dynamic_api_analyzer.py` | 动态 API 分析 | `from core.dynamic_api_analyzer import DynamicAPIAnalyzer` |
 | `core/api_interceptor.py` | API Hook | `from core.api_interceptor import APIInterceptor` |
 | `core/deep_api_tester_v55.py` | V55 JS 分析器 | `from core.deep_api_tester_v55 import DeepAPITesterV55` |
+| `core/deep_api_tester_v35.py` | V35 JS 分析器 (legacy) | `from core.deep_api_tester_v35 import DeepAPITesterV35` |
+
+### 漏洞测试模块
+
+| 模块文件 | 功能 | 导入方式 |
+|---------|------|---------|
 | `core/browser_tester.py` | 浏览器测试 | `from core.browser_tester import BrowserAutomationTester` |
-| `core/cloud_storage_tester.py` | 云存储测试 | `from core.cloud_storage_tester import CloudStorageTester` |
 | `core/api_fuzzer.py` | 模糊测试 | `from core.api_fuzzer import APIfuzzer` |
-| `core/orchestrator.py` | 智能编排器 | `from core.orchestrator import EnhancedAgenticOrchestrator` |
+| `core/cloud_storage_tester.py` | 云存储测试 | `from core.cloud_storage_tester import CloudStorageTester` |
+| `core/advanced_recon.py` | 高级侦察 | `from core.advanced_recon import AdvancedRecon` |
+| `core/agentic_analyzer.py` | Agent 分析 | `from core.agentic_analyzer import AgenticAnalyzer` |
+
+### 支持模块
+
+| 模块文件 | 功能 |
+|---------|------|
+| `core/context_manager.py` | 上下文管理器 |
+| `core/reasoning_engine.py` | 推理引擎 |
+| `core/strategy_pool.py` | 策略池 |
+| `core/testing_loop.py` | 测试循环 |
+| `core/scan_engine.py` | 扫描引擎 |
+| `core/smart_analyzer.py` | 智能分析器 |
+| `core/response_classifier.py` | 响应分类器 |
+| `core/http_client.py` | HTTP 客户端 |
+| `core/models.py` | 数据模型 |
 
 ---
 
