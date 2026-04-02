@@ -787,45 +787,98 @@ token泄露 → 用token访问敏感接口 → 越权操作
 core/                              # 核心能力池（原子化）
 ├── collectors/                     # 信息采集能力
 │   ├── http_client.py            # HTTP请求能力
-│   ├── js_parser.py              # JS源码解析
-│   └── browser_collect.py         # 无头浏览器采集
+│   ├── js_parser.py              # JS源码解析（AST+正则）
+│   ├── browser_collect.py         # 无头浏览器采集
+│   ├── js_collector.py           # JS采集（基础版）
+│   ├── browser_collector.py      # 浏览器采集（基础版）
+│   ├── url_collector.py          # URL采集
+│   └── api_path_finder.py        # API路径发现
 ├── analyzers/                     # 分析能力
 │   ├── api_parser.py             # API端点解析
 │   ├── response_analyzer.py       # 响应类型分析
+│   ├── sensitive_finder.py        # 敏感信息发现
 │   └── sensitive_finder.py       # 敏感信息发现
 ├── testers/                       # 测试能力
 │   ├── sqli_tester.py           # SQL注入测试
 │   ├── idor_tester.py           # 越权测试
 │   ├── auth_tester.py           # 认证测试
 │   ├── jwt_tester.py            # JWT测试
-│   └── fuzz_tester.py           # 模糊测试
+│   ├── fuzz_tester.py           # 模糊测试
+│   ├── api_fuzzer.py           # API模糊测试
+│   └── browser_tester.py        # 浏览器测试
 ├── verifiers/                    # 验证能力
 │   ├── vuln_verifier.py         # 漏洞验证（10维度）
 │   └── response_diff.py         # 响应差异对比
-└── utils/                        # 工具能力
-    ├── prerequisite.py          # 依赖检查
-    ├── payload_lib.py           # Payload库
-    └── base_path_dict.py       # 【新增】API base path字典
+├── utils/                        # 工具能力
+│   ├── prerequisite.py          # 依赖检查
+│   ├── payload_lib.py           # Payload库
+│   └── base_path_dict.py        # API base path字典
+└── advanced/                     # 高级能力
+    ├── advanced_recon.py        # 高级侦察（子域名/Swagger）
+    ├── agentic_analyzer.py       # 智能分析
+    ├── dynamic_api_analyzer.py  # 动态API分析
+    ├── deep_api_tester_v35.py  # 深度测试v35
+    ├── deep_api_tester_v55.py  # 深度测试v55
+    ├── cloud_storage_tester.py  # 云存储测试
+    ├── context_manager.py       # 上下文管理
+    ├── orchestrator.py          # 编排器
+    ├── reasoning_engine.py      # 推理引擎
+    ├── strategy_pool.py        # 策略池
+    ├── scan_engine.py          # 扫描引擎
+    ├── response_classifier.py  # 响应分类
+    ├── models.py               # 数据模型
+    ├── skill_executor.py       # Skill执行器
+    ├── skill_executor_v2.py    # Skill执行器v2
+    ├── skill_executor_v3.py    # Skill执行器v3
+    └── testing_loop.py          # 测试循环
 ```
 
 ### 能力池模块参考
 
-| 阶段 | 可用模块 | 路径 | 何时使用 | 必须使用 |
-|------|----------|------|----------|----------|
-| 发现 | `browser_collect.py` | `core/collectors/browser_collect.py` | SPA应用必须使用 | ✅ SPA必用 |
-| 发现 | `http_client.py` | `core/collectors/http_client.py` | 快速探测 | |
-| 发现 | `js_parser.py` | `core/collectors/js_parser.py` | 从JS提取API | ✅ |
-| 分析 | `api_parser.py` | `core/analyzers/api_parser.py` | 解析API端点 | ✅ |
-| 分析 | `response_analyzer.py` | `core/analyzers/response_analyzer.py` | 响应类型识别 | ✅ |
-| 分析 | `sensitive_finder.py` | `core/analyzers/sensitive_finder.py` | 敏感信息发现 | |
-| 测试 | `sqli_tester.py` | `core/testers/sqli_tester.py` | SQL注入测试 | |
-| 测试 | `idor_tester.py` | `core/testers/idor_tester.py` | 越权测试 | |
-| 测试 | `auth_tester.py` | `core/testers/auth_tester.py` | 认证测试 | |
-| 测试 | `jwt_tester.py` | `core/testers/jwt_tester.py` | JWT测试 | |
-| 测试 | `fuzz_tester.py` | `core/testers/fuzz_tester.py` | 模糊测试 | |
-| 验证 | `vuln_verifier.py` | `core/verifiers/vuln_verifier.py` | 漏洞验证(10维度) | ✅ |
-| 辅助 | `prerequisite.py` | `core/utils/prerequisite.py` | 依赖检查 | ✅ |
-| 辅助 | `base_path_dict.py` | `core/utils/base_path_dict.py` | base_path获取 | ✅ |
+| 阶段 | 可用模块 | 路径 | 使用场景 | 必须 |
+|------|----------|------|----------|------|
+| **采集-发现** | | | 发现API端点时 | |
+| | `browser_collect.py` | `core/collectors/browser_collect.py` | SPA应用必须使用，采集JS+API+敏感信息 | ✅ |
+| | `js_parser.py` | `core/collectors/js_parser.py` | 从JS提取API，使用AST+正则双模式 | ✅ |
+| | `js_collector.py` | `core/collectors/js_collector.py` | 简单JS采集，快速提取 | |
+| | `browser_collector.py` | `core/collectors/browser_collector.py` | 浏览器基础采集 | |
+| | `http_client.py` | `core/collectors/http_client.py` | 快速HTTP探测，获取HTML/响应头 | |
+| | `url_collector.py` | `core/collectors/url_collector.py` | 批量URL收集 | |
+| | `api_path_finder.py` | `core/collectors/api_path_finder.py` | 从响应/JS中自动发现API路径 | |
+| | `advanced_recon.py` | `core/advanced_recon.py` | 发现Swagger/子域名枚举，批量资产发现 | |
+| **采集-敏感信息** | | | 发现敏感信息泄露时 | |
+| | `sensitive_finder.py` | `core/analyzers/sensitive_finder.py` | 提取password/token/密钥等敏感字段 | |
+| | `response_analyzer.py` | `core/analyzers/response_analyzer.py` | 分析响应类型，识别JSON/HTML/WAF | |
+| **测试-漏洞** | | | 测试具体漏洞类型时 | |
+| | `sqli_tester.py` | `core/testers/sqli_tester.py` | SQL注入测试，检测SQL错误 | |
+| | `idor_tester.py` | `core/testers/idor_tester.py` | 越权测试，IDOR漏洞检测 | |
+| | `auth_tester.py` | `core/testers/auth_tester.py` | 认证绕过测试，弱密码检测 | |
+| | `jwt_tester.py` | `core/testers/jwt_tester.py` | JWT漏洞测试，alg:none等 | |
+| | `fuzz_tester.py` | `core/testers/fuzz_tester.py` | 参数fuzzing，模糊测试 | |
+| | `api_fuzzer.py` | `core/api_fuzzer.py` | API端点fuzzing，参数挖掘 | |
+| | `browser_tester.py` | `core/browser_tester.py` | DOM XSS，浏览器环境测试 | |
+| | `cloud_storage_tester.py` | `core/cloud_storage_tester.py` | OSS/Bucket安全测试 | |
+| **验证** | | | 验证漏洞确认时 | |
+| | `vuln_verifier.py` | `core/verifiers/vuln_verifier.py` | 10维度漏洞验证，确认/排除 | ✅ |
+| | `response_diff.py` | `core/verifiers/response_diff.py` | 响应对比，排除误报 | |
+| **辅助** | | | 支撑能力 | |
+| | `base_path_dict.py` | `core/utils/base_path_dict.py` | 找不到baseURL时，fuzzing父路径 | ✅ |
+| | `prerequisite.py` | `core/utils/prerequisite.py` | 依赖检查，工具可用性验证 | ✅ |
+| **高级/编排** | | | 复杂测试场景 | |
+| | `dynamic_api_analyzer.py` | `core/dynamic_api_analyzer.py` | 动态API分析，运行时分析 | |
+| | `deep_api_tester_v35.py` | `core/deep_api_tester_v35.py` | 深度测试v35，综合测试 | |
+| | `deep_api_tester_v55.py` | `core/deep_api_tester_v55.py` | 深度测试v55，高级测试 | |
+| | `context_manager.py` | `core/context_manager.py` | 管理测试上下文，状态维护 | |
+| | `orchestrator.py` | `core/orchestrator.py` | 编排多阶段测试流程 | |
+| | `reasoning_engine.py` | `core/reasoning_engine.py` | 攻击链推理，漏洞关联 | |
+| | `strategy_pool.py` | `core/strategy_pool.py` | 测试策略选择，自适应测试 | |
+| | `scan_engine.py` | `core/scan_engine.py` | 扫描编排，批量测试 | |
+| | `response_classifier.py` | `core/response_classifier.py` | 响应分类，模式识别 | |
+| | `models.py` | `core/models.py` | 数据模型定义 | |
+| | `skill_executor.py` | `core/skill_executor.py` | Skill执行主入口 | |
+| | `skill_executor_v2.py` | `core/skill_executor_v2.py` | Skill执行器v2 | |
+| | `skill_executor_v3.py` | `core/skill_executor_v3.py` | Skill执行器v3 | |
+| | `testing_loop.py` | `core/testing_loop.py` | 测试循环，持续测试 | |
 
 ### SPA应用采集流程（必须遵循）
 
@@ -833,66 +886,117 @@ core/                              # 核心能力池（原子化）
 ┌─────────────────────────────────────────────────────────────┐
 │ 阶段1: 基础探测                                              │
 ├─────────────────────────────────────────────────────────────┤
-│ 1. HTTP探测: curl -I http://target.com                      │
-│ 2. 技术栈: 检查HTML中Vue/React/Angular标识                   │
-│ 3. 判断SPA: /api/* 返回HTML → SPA应用                        │
-│ 4. 检查Swagger: /swagger-ui.html, /v2/api-docs              │
+│ 1. HTTP探测: http_client.py → curl探测                      │
+│    参考: core/collectors/http_client.py                      │
+│                                                              │
+│ 2. 技术栈: browser_collect.py → 检测Vue/React/Angular标识      │
+│    参考: core/collectors/browser_collect.py                  │
+│                                                              │
+│ 3. 判断SPA: /api/* 返回HTML → SPA应用                      │
+│                                                              │
+│ 4. 检查Swagger: advanced_recon.py → 枚举接口文档          │
+│    参考: core/advanced_recon.py                            │
 └─────────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 阶段2: JS采集（必须使用Playwright）                          │
 ├─────────────────────────────────────────────────────────────┤
-│ 1. 启动浏览器: sync_playwright()                             │
-│ 2. 访问目标: page.goto(url, wait_until="networkidle")       │
+│ 1. 启动浏览器: browser_collect.py                           │
+│    参考: core/collectors/browser_collect.py                  │
+│                                                              │
+│ 2. 访问目标: page.goto(url, wait_until="networkidle")      │
+│                                                              │
 │ 3. 等待加载: page.wait_for_timeout(5000)                   │
-│ 4. 提取JS: re.findall(r'<script[^>]+src=["\']([^"\']+)')  │
-│ 5. 识别JS来源: app.js, chunk-vendors.js, chunk-*.js       │
+│                                                              │
+│ 4. 提取JS: js_parser.py → 从HTML提取JS文件列表            │
+│    参考: core/collectors/js_parser.py                        │
+│                                                              │
+│ 5. 拦截API: browser_collect.py → 捕获XHR/Fetch请求        │
+│    参考: core/collectors/browser_collect.py                  │
+│                                                              │
+│ 6. 采集敏感信息: sensitive_finder.py → localStorage/响应头│
+│    参考: core/analyzers/sensitive_finder.py                │
 └─────────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 阶段3: JS深度分析（AST+正则双模式）                          │
 ├─────────────────────────────────────────────────────────────┤
-│ 【关键】必须分析每个JS文件:                                  │
-│ 1. baseURL配置:                                           │
+│ 1. baseURL配置: js_parser.py → extract_base_urls()        │
+│    参考: core/collectors/js_parser.py                       │
+│    patterns:                                                │
 │    - r'baseURL\s*[:=]\s*["\']([^"\']+)["\']'             │
 │    - r'axios\.create\s*\(\s*\{([^}]+)\}'                  │
 │                                                              │
-│ 2. API路径提取:                                             │
-│    - 正则: r'["\'](/(?:user|auth|admin)[^"\']*)["\']'   │
-│    - AST: 使用esprima解析JS AST                            │
+│ 2. API路径提取:                                              │
+│    → js_parser.py → extract_api_patterns() (正则)         │
+│    → js_parser.py → extract_with_ast() (AST)               │
+│    参考: core/collectors/js_parser.py                         │
 │                                                              │
-│ 3. 发现API后深入分析来源JS:                                  │
-│    → curl下载该JS文件                                        │
-│    → 提取所有API路径（包括混淆前的）                           │
-│    → 提取敏感信息（密钥、硬编码凭证）                          │
-│    → 提取URL模板                                             │
+│ 3. 敏感信息: sensitive_finder.py → 提取IP/域名/凭证        │
+│    参考: core/analyzers/sensitive_finder.py                  │
 │                                                              │
-│ 4. base_path获取（按优先级）:                               │
-│    → baseURL配置值                                          │
-│    → 从API路径反推父路径                                     │
-│    → 使用base_path_dict字典fuzzing                          │
+│ 4. base_path获取: base_path_dict.py → get_base_path...     │
+│    参考: core/utils/base_path_dict.py                        │
 └─────────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 阶段4: API测试                                               │
 ├─────────────────────────────────────────────────────────────┤
-│ 1. base_path拼接: discovered_api + base_path              │
-│ 2. 逐个测试API端点:                                         │
-│    - GET: Content-Type → JSON=真实API, HTML=SPA路由         │
-│    - POST: 登录接口 → SQL注入/XSS测试                      │
-│ 3. 发现Swagger → 立即解析 → 获取完整API列表 → 深入测试      │
-│ 4. 401/403=需认证, 200+JSON=检查是否未授权                  │
+│ 1. base_path拼接: base_path_dict.py → generate_fuzz_paths() │
+│    参考: core/utils/base_path_dict.py                        │
+│                                                              │
+│ 2. SQL注入: sqli_tester.py → 测试SQL注入                    │
+│    参考: core/testers/sqli_tester.py                        │
+│                                                              │
+│ 3. 越权测试: idor_tester.py → 测试IDOR                     │
+│    参考: core/testers/idor_tester.py                         │
+│                                                              │
+│ 4. 认证测试: auth_tester.py → 测试认证绕过                   │
+│    参考: core/testers/auth_tester.py                        │
+│                                                              │
+│ 5. JWT测试: jwt_tester.py → 测试JWT漏洞                    │
+│    参考: core/testers/jwt_tester.py                         │
+│                                                              │
+│ 6. Fuzzing: fuzz_tester.py → 参数fuzzing                  │
+│    参考: core/testers/fuzz_tester.py                        │
+│                                                              │
+│ 7. 发现Swagger: advanced_recon.py → 解析获取完整API       │
+│    参考: core/advanced_recon.py                            │
 └─────────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 阶段5: 漏洞验证（10维度）                                     │
 ├─────────────────────────────────────────────────────────────┤
-│ □ 维度1: 响应类型    □ 维度2: 状态码     □ 维度3: 响应长度 │
-│ □ 维度4: WAF拦截    □ 维度5: 敏感信息    □ 维度6: 一致性   │
-│ □ 维度7: SQL注入     □ 维度8: IDOR        □ 维度9: 认证绕过│
-│ □ 维度10: 信息泄露                                            │
+│ 1. vuln_verifier.py → 10维度验证                            │
+│    参考: core/verifiers/vuln_verifier.py                    │
+│                                                              │
+│ 2. response_diff.py → 响应对比排除误报                     │
+│    参考: core/verifiers/response_diff.py                    │
+│                                                              │
+│ 3. response_analyzer.py → 响应类型分析                     │
+│    参考: core/analyzers/response_analyzer.py                │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### 场景→模块映射
+
+| 场景 | 推荐模块 | 路径 |
+|------|---------|------|
+| SPA应用发现API | `browser_collect.py` + `js_parser.py` | `core/collectors/` |
+| 快速探测目标 | `http_client.py` | `core/collectors/http_client.py` |
+| 发现Swagger | `advanced_recon.py` | `core/advanced_recon.py` |
+| 提取敏感信息 | `sensitive_finder.py` | `core/analyzers/sensitive_finder.py` |
+| SQL注入测试 | `sqli_tester.py` | `core/testers/sqli_tester.py` |
+| 越权测试 | `idor_tester.py` | `core/testers/idor_tester.py` |
+| 认证绕过测试 | `auth_tester.py` | `core/testers/auth_tester.py` |
+| JWT漏洞测试 | `jwt_tester.py` | `core/testers/jwt_tester.py` |
+| 参数fuzzing | `fuzz_tester.py` / `api_fuzzer.py` | `core/testers/` |
+| DOM XSS测试 | `browser_tester.py` | `core/browser_tester.py` |
+| OSS/Bucket测试 | `cloud_storage_tester.py` | `core/cloud_storage_tester.py` |
+| 漏洞验证 | `vuln_verifier.py` | `core/verifiers/vuln_verifier.py` |
+| base_path缺失 | `base_path_dict.py` | `core/utils/base_path_dict.py` |
+| 深度测试 | `deep_api_tester_v55.py` | `core/deep_api_tester_v55.py` |
+| 测试编排 | `orchestrator.py` / `scan_engine.py` | `core/` |
 
 ### Base Path获取完整流程
 
