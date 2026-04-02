@@ -421,8 +421,13 @@ class VulnerabilityTester:
                     if 'application/json' not in content_type and '{' not in r.text[:100]:
                         continue
                     
-                    sqli_indicators = ['sql', 'syntax', 'mysql', 'oracle', 'error', 'sqlite']
-                    if any(ind in r.text.lower() for ind in sqli_indicators):
+                    # SQL 注入特征检测（排除假阳性）
+                    text_lower = r.text.lower()
+                    # 真正的 SQL 错误特征
+                    sql_patterns = ['sql syntax', 'sql error', 'mysql', 'oracle', 'sqlite', 
+                                   'sqlstate', 'postgresql', 'sqlserver', 'column', 'table',
+                                   'mysqli_', 'pdo_', 'odbc_']
+                    if any(p in text_lower for p in sql_patterns):
                         self.ctx.add_vulnerability({
                             'type': 'SQL Injection',
                             'severity': 'CRITICAL',
