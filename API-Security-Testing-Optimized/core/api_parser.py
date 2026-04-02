@@ -110,20 +110,28 @@ class APIEndpointParser:
         try:
             resp = self.session.get(self.target, timeout=10)
             patterns = [
-                r'<script[^>]+src=["\']([^"\']+\.js[^"\']*)["\']',
+                r'<script[^>]+src=["\']?([^"\'>\s]+\.js)["\']?',
             ]
+            
+            from urllib.parse import urlparse
+            parsed = urlparse(self.target)
+            base_origin = f"{parsed.scheme}://{parsed.netloc}"
+            base_path = parsed.path.rstrip('/')
             
             for pattern in patterns:
                 matches = re.findall(pattern, resp.text)
                 for match in matches:
                     if match.startswith('/'):
-                        url = self.target.rstrip('/') + match
+                        # match 是相对于网站根路径的，需要拼接到 origin
+                        # 如果 target 是 /idbd-web，match 是 /idbd-web/xxx
+                        # 则直接用 base_origin + match
+                        url = base_origin + match
                     elif match.startswith('http'):
                         url = match
                     else:
                         continue
                     
-                    if self.target.replace('http://', '').replace('https://', '').split('/')[0] in url:
+                    if parsed.netloc in url:
                         if url not in self.js_files:
                             self.js_files.append(url)
             
@@ -247,6 +255,14 @@ class APIEndpointParser:
             (r'["\'](/v\d+/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'versioned_api'),
             # RESTful 模式
             (r'["\'](/[a-z]+/[a-z]+/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'restful'),
+            # /xxx-server/api/xxx 模式 (如 /auth-server/api/xxx)
+            (r'["\'](/[a-zA-Z0-9]+-server/api/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'server_api'),
+            # /idbd-api/xxx 模式
+            (r'["\'](/idbd-api/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'idbd_api'),
+            # /user-server/api/xxx 模式
+            (r'["\'](/user-server/api/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'user_server_api'),
+            # /auth-server/api/xxx 模式
+            (r'["\'](/auth-server/api/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'auth_server_api'),
         ]
         
         for pattern, default_method, ptype in path_patterns:
