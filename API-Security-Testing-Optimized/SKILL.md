@@ -28,8 +28,7 @@ trigger:
 >
 > **必须使用无头浏览器**：
 > - **禁止降级为 requests/curl**：现代 SPA 应用使用 JavaScript 动态加载 API，requests/curl 无法执行 JS，无法发现真实 API
-> - **必须使用无头浏览器**：Playwright 等无头浏览器可以执行完整 JavaScript，获取实际调用的 API 端点和参数
-> - **真实环境模拟**：无头浏览器更接近真实用户行为，能发现动态加载的 API
+> - **必须使用 Playwright**：无头浏览器可执行完整 JavaScript，获取实际调用的 API 端点和参数
 >
 > **核心理念**：
 > - 各模块独立，可单独使用也可组合
@@ -38,64 +37,94 @@ trigger:
 
 ---
 
-## 测试流程框架
+## 执行决策流程
 
 ```
-阶段 0: 前置检查
-    └── 检查环境依赖 (playwright 必须, requests 必须)
+[阶段 0] 前置检查
+    │
+    ├─ playwright 可用? ─┬─ 否 → [跳过动态分析/API Hook]
+    │                   │
+    │                   └─ 是 → 继续
+    │
+    └─ requests 可用? ─┬─ 否 → [FATAL]
+                       │
+                       └─ 是 → [阶段 1]
 
-阶段 1: 资产发现
-    ├── 静态分析 - JS 文件解析 (core.api_parser)
-    ├── 动态分析 - Playwright 网络捕获 (core.dynamic_api_analyzer) [必须]
-    ├── API Hook - Playwright 获取真实调用参数 (core.api_interceptor)
-    └── 父路径探测 - 发现可访问路径
+[阶段 1] 资产发现
+    │
+    ├─ [1.1] 静态分析 (api_parser) - 始终执行
+    │       └─ 发现端点 > 0?
+    │           ├─ 是 → 继续
+    │           └─ 否 → [扩大JS搜索范围]
+    │
+    ├─ [1.2] 父路径探测
+    │       └─ JSON API > 0?
+    │           ├─ 是 → [阶段 2] 漏洞分析
+    │           └─ 否 → 检查 nginx fallback
+    │                   ├─ 是 → 报告配置问题，跳过漏洞测试
+    │                   └─ 否 → [阶段 2] 继续测试
+    │
+    ├─ [1.3] 动态分析 (dynamic_api_analyzer) - SPA必备
+    │       └─ 补充发现更多端点
+    │       └─ 注意: 较慢，耐心等待
+    │
+    └─ [1.4] API Hook (api_interceptor) - 需要登录时
+            └─ 获取真实调用参数
 
-阶段 2: 漏洞分析
-    ├── SQL 注入
-    ├── XSS
-    ├── 路径遍历
-    ├── 敏感信息泄露
-    ├── 认证绕过
-    └── 业务逻辑漏洞
+[阶段 2] 漏洞分析
+    │
+    ├─ JSON API > 0? ─┬─ 否 → [SKIP] 避免误报
+    │                  │
+    │                  └─ 是 → 执行测试
+    │
+    ├─ [2.1] SQL 注入
+    ├─ [2.2] XSS
+    ├─ [2.3] 路径遍历
+    ├─ [2.4] 敏感信息泄露
+    └─ [2.5] 认证绕过
 
-阶段 3: 云存储安全测试 (core.cloud_storage_tester)
+[阶段 3] 云存储测试
+    │
+    └─ 始终执行 (cloud_storage_tester)
 
-阶段 4: 报告生成
+[阶段 4] 报告生成
 ```
-
-**重要**：阶段 1 必须使用 Playwright 无头浏览器，禁止使用 requests/curl 降级替代。
 
 ---
 
-## 模块选择策略
+## 模块选择决策表
+
+### 根据前置检查结果选择
+
+| 检查项 | 可用 | 跳过模块 | 说明 |
+|-------|------|---------|------|
+| playwright | ❌ | 动态分析、API Hook | 使用静态解析作为主要发现方式 |
+| playwright | ✅ | 无 | 可执行完整测试流程 |
+
+### 根据父路径探测结果选择
+
+| 探测结果 | JSON API | HTML Fallback | 后续行动 |
+|---------|---------|---------------|---------|
+| JSON API > 0 | ✅ | ❌ | 正常执行漏洞测试 |
+| JSON API = 0 | ❌ | ✅ | 报告配置问题，跳过漏洞测试 |
+| JSON API = 0 | ❌ | ❌ | 可能是内网API，执行测试 |
 
 ### 根据站点类型选择
 
-| 站点类型 | 特点 | 推荐模块组合 |
-|---------|------|-------------|
-| **纯 HTML + 后端渲染** | 页面内容在服务端生成 | `api_parser` (简单解析) |
-| **jQuery/Bootstrap 传统 SPA** | JS 较简单，API 较明显 | `api_parser` + 父路径探测 |
-| **Vue/React 现代 SPA** | 动态加载，API 隐藏 | `api_parser` + `dynamic_api_analyzer` + 父路径探测 |
-| **需要登录的系统** | API 需要认证 | `api_parser` + `api_interceptor` + `browser_tester` |
-| **复杂交互系统** | 多步骤流程 | 全部模块组合 |
+| 站点类型 | 静态解析 | 动态分析 | API Hook | 说明 |
+|---------|---------|---------|---------|------|
+| **纯 HTML** | ✅ | ❌ | ❌ | 内容在服务端生成 |
+| **jQuery 传统 SPA** | ✅ | ⚠️ | ❌ | JS 简单，可选动态 |
+| **Vue/React 现代 SPA** | ✅ | ✅ | ⚠️ | 必须动态分析 |
+| **需要登录系统** | ✅ | ✅ | ✅ | 需要获取认证后的API |
 
 ### 根据测试目标选择
 
-| 测试目标 | 推荐模块 | 说明 |
-|---------|---------|------|
-| **快速侦察** | `api_parser` | 5-10 秒完成端点发现 |
-| **全面发现** | `api_parser` + `dynamic_api_analyzer` | 静态+动态结合，发现更多端点 |
-| **参数推断** | `api_parser` + `api_interceptor` | 获取真实参数名和类型 |
-| **认证测试** | `browser_tester` | 自动化登录和会话测试 |
-| **云存储安全** | `cloud_storage_tester` | 检测 OSS/S3/MinIO |
-
-### 根据网络环境选择
-
-| 环境 | 建议 |
-|-----|------|
-| **目标网络较慢** | 减少动态分析的交互次数 |
-| **目标网络稳定** | 完整执行所有模块 |
-| **内网环境** | 可完整执行，性能更好 |
+| 测试目标 | 静态 | 动态 | Hook | Fuzzer | Cloud |
+|---------|------|------|------|--------|-------|
+| **快速侦察** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **全面发现** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **深度测试** | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ---
 
@@ -105,13 +134,9 @@ trigger:
 
 #### `core/api_parser.py` - 静态 API 解析
 
-**能力**：
-- 从 JS 文件提取 API 端点
-- 正则匹配 axios/fetch 调用
-- RESTful 路径参数推断
-- 父路径生成
+**能力**：JS 文件正则匹配、RESTful 路径推断、父路径生成
 
-**适用**：所有站点，尤其是纯 HTML 或传统 SPA
+**耗时**：快 (5-10s)
 
 **使用**：
 ```python
@@ -125,46 +150,34 @@ parent_paths = parser.probe_parent_paths()
 
 #### `core/dynamic_api_analyzer.py` - 动态网络分析
 
-**能力**：
-- Playwright 浏览器自动化
-- 捕获所有网络请求
-- 识别请求来源 (fetch/axios/xhr)
-- 触发多种交互 (登录/搜索/导航/表单)
+**能力**：Playwright 浏览器捕获、触发交互、识别来源
 
-**适用**：Vue/React 等现代 SPA，API 动态加载
+**耗时**：较慢 (30s-几分钟)
 
-**注意**：需要较长时间执行 (30s-几分钟)
+**适用**：Vue/React SPA，API 动态加载
 
-**使用**：
+**注意**：必须使用无头浏览器，禁止降级
+
 ```python
 from core.dynamic_api_analyzer import DynamicAPIAnalyzer
 
 analyzer = DynamicAPIAnalyzer(target)
 results = analyzer.analyze_full()
-# results['endpoints'] - 发现的端点
-# results['requests'] - 原始请求
 ```
 
 #### `core/api_interceptor.py` - API Hook
 
-**能力**：
-- 注入 JavaScript 拦截 fetch/XHR
-- 获取真实的 API 调用参数
-- 识别敏感操作 (登录/支付/修改)
-- 生成测试向量
+**能力**：JavaScript 拦截 fetch/XHR、获取真实参数、识别敏感操作
 
-**适用**：需要登录的系统，获取认证后的真实 API
+**耗时**：较慢 (30s-几分钟)
 
-**注意**：需要 Playwright，执行时间较长
+**适用**：需要登录的系统
 
-**使用**：
 ```python
 from core.api_interceptor import APIInterceptor
 
 interceptor = APIInterceptor(target)
 results = interceptor.hook_all_apis()
-# results['sensitive'] - 敏感操作
-# results['test_vectors'] - 测试向量
 ```
 
 ### 2. 漏洞测试模块
@@ -180,172 +193,140 @@ results = fuzzer.fuzz_endpoints(endpoints, parent_paths)
 
 #### `core/cloud_storage_tester.py` - 云存储测试
 
+**注意**：会自动识别 nginx fallback，避免误报
+
 ```python
 from core.cloud_storage_tester import CloudStorageTester
 
 tester = CloudStorageTester(target)
 tester.session = session
-findings = tester.run()
+findings, storage_url = tester.full_test(target)
 ```
 
-### 3. 浏览器测试模块
+---
 
-#### `core/browser_tester.py` - 自动化浏览器测试
+## 智能判断规则
 
-**能力**：
-- 自动化登录流程
-- 会话保持测试
-- UI 交互测试
+### 1. nginx fallback 判断
 
-**适用**：需要认证的系统
+```
+IF 所有父路径返回 HTML (Content-Type: text/html)
+THEN 
+    IF JSON API 数量 > 0
+        继续测试
+    ELSE
+        报告 "nginx fallback 配置问题"
+        跳过漏洞测试 (避免误报)
+```
+
+### 2. 误报避免规则
+
+#### SQL 注入检测
+```
+IF 响应是 HTML (nginx fallback)
+    SKIP (避免误报)
+
+IF 响应是 JSON 但不包含 SQL 关键字
+    SKIP (可能是正常业务逻辑)
+
+IF 响应是 JSON 且包含 SQL 关键字
+    报告可疑 (需要人工确认)
+```
+
+#### 云存储检测
+```
+IF Content-Type 不是 xml/application
+    且响应包含 <!DOCTYPE
+    THEN SKIP (是 HTML，不是 XML)
+
+IF 响应大小 < 100 bytes
+    THEN SKIP (太短，无意义)
+```
 
 ---
 
 ## 组合使用示例
 
-### 示例 1：快速侦察（传统站点）
+### 示例 1：快速侦察
 
 ```python
-"""
-目标：传统站点，页面在服务端生成
-策略：只做静态分析，快速完成
-"""
-
-import requests
+"""目标：快速了解资产，跳过耗时长模块"""
 from core.api_parser import APIEndpointParser
 
-session = requests.Session()
 parser = APIEndpointParser(target, session)
+endpoints = parser.parse_js_files(parser.discover_js_files())
+parent_paths = parser.probe_parent_paths()
 
-js_files = parser.discover_js_files()
-endpoints = parser.parse_js_files(js_files)
-
-print(f"发现 {len(endpoints)} 个端点")
-for ep in endpoints:
-    print(f"  {ep.method} {ep.path}")
+# 立即获得端点清单，耗时短
 ```
 
-### 示例 2：Vue SPA 全面发现
+### 示例 2：Vue SPA 全面测试
 
 ```python
-"""
-目标：Vue.js SPA
-策略：静态 + 动态组合，发现所有端点
-"""
-
-import requests
+"""目标：全面发现所有 API"""
 from core.api_parser import APIEndpointParser
 from core.dynamic_api_analyzer import DynamicAPIAnalyzer
 
-session = requests.Session()
-
 # 1. 静态解析
 parser = APIEndpointParser(target, session)
-js_files = parser.discover_js_files()
-static_endpoints = parser.parse_js_files(js_files)
+static_eps = parser.parse_js_files(parser.discover_js_files())
 
-# 2. 动态分析 (较慢，需要等待)
+# 2. 动态分析 (较慢但必须)
 analyzer = DynamicAPIAnalyzer(target)
 dynamic_results = analyzer.analyze_full()
 
 # 3. 合并结果
-all_endpoints = static_endpoints + dynamic_results['endpoints']
-
-print(f"静态: {len(static_endpoints)} 端点")
-print(f"动态: {len(dynamic_results['endpoints'])} 端点")
-print(f"总计: {len(all_endpoints)} 端点")
+all_endpoints = static_eps + dynamic_results['endpoints']
 ```
 
-### 示例 3：需要登录的系统
+### 示例 3：nginx fallback 检测
 
 ```python
-"""
-目标：需要登录的系统
-策略：使用 API Hook 获取登录后的真实 API
-"""
+"""目标：检测配置问题，避免误报"""
+parent_paths = parser.probe_parent_paths()
 
-import requests
-from core.api_interceptor import APIInterceptor
-from core.browser_tester import BrowserAutomationTester
+json_api_count = sum(1 for p in parent_paths.values() if p.get('is_api'))
+html_fallback_count = len(parent_paths) - json_api_count
 
-# 1. 使用浏览器自动化登录
-browser = BrowserAutomationTester(target)
-session = browser.login(username, password)
-
-# 2. Hook 登录后的 API 调用
-interceptor = APIInterceptor(target)
-hook_results = interceptor.hook_all_apis()
-
-print(f"发现 {len(hook_results['sensitive'])} 个敏感操作")
-```
-
-### 示例 4：完整测试流程
-
-```python
-"""
-完整测试流程：适用于需要全面测试的场景
-"""
-
-import requests
-from core.api_parser import APIEndpointParser
-from core.dynamic_api_analyzer import DynamicAPIAnalyzer
-from core.api_fuzzer import APIFuzzer
-from core.cloud_storage_tester import CloudStorageTester
-
-session = requests.Session()
-
-# 1. 资产发现
-parser = APIEndpointParser(target, session)
-js_files = parser.discover_js_files()
-endpoints = parser.parse_js_files(js_files)
-
-analyzer = DynamicAPIAnalyzer(target)
-dynamic_results = analyzer.analyze_full()
-
-# 2. 合并端点
-all_endpoints = endpoints + dynamic_results['endpoints']
-
-# 3. 漏洞测试
-fuzzer = APIFuzzer(target, session)
-vulnerabilities = fuzzer.fuzz_endpoints(all_endpoints, parent_paths)
-
-# 4. 云存储测试
-cloud = CloudStorageTester(target)
-cloud.session = session
-cloud_findings = cloud.run()
-
-# 5. 生成报告
-generate_report(all_endpoints, vulnerabilities, cloud_findings)
+if json_api_count == 0 and html_fallback_count > 0:
+    report.add({
+        'type': 'nginx fallback',
+        'severity': 'HIGH',
+        'suggestion': '后端 API 服务不可达'
+    })
+    # 跳过漏洞测试
+else:
+    run_vulnerability_tests()
 ```
 
 ---
 
 ## 模块能力池
 
-| 模块 | 能力 | 耗时 | 依赖 |
-|-----|------|-----|------|
-| `api_parser` | 静态解析 JS | 快 (5-10s) | requests |
-| `dynamic_api_analyzer` | 浏览器捕获 | 慢 (30s-几分钟) | playwright |
-| `api_interceptor` | 参数拦截 | 慢 (30s-几分钟) | playwright |
-| `api_fuzzer` | 模糊测试 | 中 (取决于端点数) | requests |
-| `cloud_storage_tester` | 云存储检测 | 快 (10-30s) | requests |
-| `browser_tester` | 浏览器自动化 | 中 (取决于交互) | playwright |
+| 模块 | 能力 | 耗时 | 依赖 | 必须 |
+|-----|------|-----|------|------|
+| `api_parser` | 静态解析 | 快 | requests | ✅ |
+| `dynamic_api_analyzer` | 浏览器捕获 | 慢 | playwright | ⚠️ SPA必备 |
+| `api_interceptor` | 参数拦截 | 慢 | playwright | ⚠️ 登录系统 |
+| `api_fuzzer` | 模糊测试 | 中 | requests | ❌ |
+| `cloud_storage_tester` | 云存储检测 | 快 | requests | ✅ |
+| `browser_tester` | 浏览器自动化 | 中 | playwright | ⚠️ 登录系统 |
 
 ---
 
 ## 最佳实践
 
 1. **渐进式测试**：先快速侦察，再根据发现决定深入测试
-2. **智能跳过**：如果静态分析已发现足够端点，可跳过动态分析
-3. **误报识别**：注意识别 nginx fallback 等配置问题导致的假阳性
-4. **参数验证**：Hook 到的参数比猜测的参数更可靠
-5. **认证处理**：需要登录的系统优先使用 browser_tester 或 api_interceptor
+2. **智能跳过**：nginx fallback 时跳过漏洞测试，避免误报
+3. **参数验证**：Hook 到的参数比猜测的参数更可靠
+4. **认证处理**：需要登录的系统优先使用 browser_tester 或 api_interceptor
+5. **耐心等待**：动态分析和 API Hook 较慢，等待完成
 
----
+## 异常处理
 
-## 注意事项
-
-1. **授权测试**：仅对已授权的目标进行测试
-2. **性能差异**：动态分析和 API Hook 较慢，耐心等待
-3. **环境依赖**：确保 playwright 和 requests 可用
-4. **SPA 特性**：现代 SPA 需要动态分析才能发现所有端点
+| 异常 | 处理方式 |
+|-----|---------|
+| Playwright 不可用 | 使用静态解析作为主要方式 |
+| 动态分析超时 | 继续使用已捕获结果 |
+| API Hook 失败 | 使用静态端点 + 猜测参数 |
+| 云存储检测误报 | 检查 Content-Type + 响应格式 |
