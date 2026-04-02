@@ -489,140 +489,34 @@ refund → 需要订单 → 需要先有orderNo
 
 ## 核心模块能力池 (core/)
 
-SKILL.md 是思维指导，core/ 是执行能力。**不要写执行脚本，而是调用 core/ 中的模块**。
+> **重要：能力池只作为参考，不是固定流程**
+> - 根据目标站点特点选择合适的模块
+> - 根据测试阶段动态调整
+> - 可以只用部分模块，也可以组合使用
 
-### 完整模块能力池
+### 能力池模块参考
 
-#### 发现阶段
+| 阶段 | 可用模块 | 何时使用 |
+|------|----------|----------|
+| 发现 | `advanced_recon.py` | Swagger/子域名枚举 |
+| 发现 | `api_parser.py` | JS解析 |
+| 发现 | `dynamic_api_analyzer.py` | SPA应用 |
+| 发现 | `http_client.py` | 快速探测 |
+| 测试 | `api_fuzzer.py` | 模糊测试 |
+| 测试 | `deep_api_tester_v35.py` | 深度测试 |
+| 测试 | `testing_loop.py` | 循环测试 |
+| 验证 | `browser_tester.py` | 浏览器验证 |
+| 辅助 | `prerequisite.py` | 依赖检查 |
+| 辅助 | `cloud_storage_tester.py` | 云存储 |
 
-| 模块 | 类/函数 | 能力 | 适用场景 |
-|------|---------|------|----------|
-| `advanced_recon.py` | `SwaggerDiscoverer` | Swagger/OpenAPI文档发现 | 发现阶段 |
-| | `WebSocketDiscoverer` | WebSocket端点发现 | SPA实时通信 |
-| | `ErrorAnalyzer` | 错误信息泄露分析 | 指纹识别 |
-| | `SubdomainEnumerator` | 子域名枚举 | 扩大攻击面 |
-| `api_parser.py` | `APIEndpointParser` | JS文件解析、API端点提取、父路径探测 | 资产发现 |
-| `dynamic_api_analyzer.py` | `DynamicAPIAnalyzer` | Playwright动态分析、运行时API捕获 | SPA应用 |
-| `api_interceptor.py` | `APIInterceptor` | 请求拦截、参数提取、token捕获 | 认证上下文 |
-| `http_client.py` | `HTTPClient` | 基础HTTP请求 | 快速探测 |
-
-#### 测试阶段
-
-| 模块 | 类/函数 | 能力 | 适用场景 |
-|------|---------|------|----------|
-| `api_fuzzer.py` | `APIfuzzer` | 模糊测试、父路径Fuzz | 漏洞发现 |
-| `deep_api_tester_v35.py` | `DeepAPITesterV35` | OWASP ZAP深度测试 | 综合漏洞 |
-| `deep_api_tester_v55.py` | `DeepAPITesterV55` | Burp Sitemap分析 | 已知接口 |
-| `browser_tester.py` | `BrowserTester` | 浏览器自动化测试 | 复杂交互 |
-| `testing_loop.py` | `InsightDrivenLoop` | 洞察驱动测试循环 | 持续探测 |
-| `testing_loop.py` | `Validator` | 测试结果验证 | 减少误报 |
-| `response_classifier.py` | `ResponseClassifier` | 响应分类、漏洞识别 | 结果分析 |
-| `smart_analyzer.py` | `SmartAnalyzer` | 智能分析 | 决策支持 |
-
-#### 编排阶段
-
-| 模块 | 类/函数 | 能力 | 适用场景 |
-|------|---------|------|----------|
-| `orchestrator.py` | `EnhancedAgenticOrchestrator` | 多阶段编排 | 完整流程 |
-| `scan_engine.py` | `ScanEngine` | 扫描引擎 | 流程控制 |
-| `context_manager.py` | `ContextManager` | 测试上下文管理 | 状态保持 |
-| `strategy_pool.py` | `StrategyPool` | 测试策略库 | 策略选择 |
-
-#### 推理阶段
-
-| 模块 | 类/函数 | 能力 | 适用场景 |
-|------|---------|------|----------|
-| `reasoning_engine.py` | `ReasoningEngine` | 推理判断 | 决策支持 |
-| `agentic_analyzer.py` | `AgenticAnalyzer` | Agentic分析 | 复杂推理 |
-| `scan_engine.py` | `VulnerabilityGrouper` | 漏洞分组 | 结果整理 |
-
-#### 辅助模块
-
-| 模块 | 类/函数 | 能力 | 适用场景 |
-|------|---------|------|----------|
-| `prerequisite.py` | `check_playwright()` | 环境检查 | 自动修复依赖 |
-| `models.py` | 数据模型 | 统一数据结构 | 数据标准化 |
-| `cloud_storage_tester.py` | `CloudStorageTester` | 云存储安全检测 | OSS漏洞 |
-
----
-
-### 完整调用示例
-
-```python
-# 1. 前置检查 + 自动修复
-from core.prerequisite import check_playwright, check_pyppeteer, check_selenium
-available, browser_type = check_playwright()
-if not available:
-    available, browser_type = check_pyppeteer()
-if not available:
-    available, browser_type = check_selenium()
-
-# 2. Swagger发现
-from core.advanced_recon import SwaggerDiscoverer
-swagger = SwaggerDiscoverer()
-swagger.scan(target)
-
-# 3. JS API解析
-from core.api_parser import APIEndpointParser
-parser = APIEndpointParser(target, session)
-js_files = parser.discover_js_files()
-endpoints = parser.parse_js_files(js_files)
-
-# 4. 动态分析 (Playwright)
-from core.dynamic_api_analyzer import DynamicAPIAnalyzer
-analyzer = DynamicAPIAnalyzer(target)
-results = analyzer.analyze_full()
-
-# 5. 拦截器获取认证信息
-from core.api_interceptor import APIInterceptor
-interceptor = APIInterceptor(target)
-auth_context = interceptor.hook_all_apis()
-
-# 6. Fuzzing测试
-from core.api_fuzzer import APIfuzzer
-fuzzer = APIfuzzer(session=session)
-fuzzer.generate_parent_fuzz_targets(端点列表)
-fuzzer.fuzz_paths(target, fuzz_targets)
-
-# 7. 深度测试
-from core.deep_api_tester_v35 import DeepAPITesterV35
-tester = DeepAPITesterV35()
-tester.test_all_endpoints(端点列表, session)
-
-# 8. 云存储检测
-from core.cloud_storage_tester import CloudStorageTester
-tester = CloudStorageTester(target)
-findings = tester.full_test(target)
-
-# 9. 编排执行完整流程
-from core.orchestrator import EnhancedAgenticOrchestrator
-orch = EnhancedAgenticOrchestrator(target)
-orch.add_stage("recon", swagger_scan)
-orch.add_stage("fuzz", fuzzing)
-result = orch.execute()
-```
-
-### 依赖处理流程
+### 调用原则
 
 ```
-Playwright不可用
-    ↓
-检查Pyppeteer
-    ↓
-检查Selenium
-    ↓
-检查MCP: headless_browser
-    ↓
-执行 pip install playwright && playwright install chromium
-    ↓
-还是不行？
-    ↓
-使用 requests + BeautifulSoup 作为降级方案
+1. 按需选择：不是所有模块都要用
+2. 动态调整：根据目标调整测试策略
+3. 灵活组合：发现问题时追加测试模块
+4. 渐进式：先轻量后深度
 ```
-
----
-
-## 输出格式
 
 完成测试后，按以下格式报告：
 
