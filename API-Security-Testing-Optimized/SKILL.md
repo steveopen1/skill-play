@@ -139,18 +139,233 @@ print('[OK] api_fuzzer: 可用')
 "
 ```
 
+### 0.3.1 无头浏览器能力检测 (强制执行)
+
+当需要使用无头浏览器时（如 SPA 测试、JS 分析、动态交互），必须先执行此检测流程。
+
+**注意**: 本 skill 不预设任何特定的浏览器工具，而是检测整个系统中所有可用的无头浏览器替代方案。
+
+```bash
+#!/bin/bash
+# ============================================================
+# 无头浏览器能力检测脚本
+# 检测系统中所有可用的无头浏览器替代方案
+# ============================================================
+
+echo "============================================================"
+echo "[系统检测] 无头浏览器能力扫描"
+echo "============================================================"
+
+AVAILABLE_BROWSERS=""
+BROWSER_CAPABILITY=""
+
+# 阶段 1: 检测 Python 无头浏览器包
+echo ""
+echo "[阶段 1] 检测 Python 无头浏览器包..."
+python3 -c "
+import importlib
+browsers = [
+    ('playwright', 'from playwright.sync_api import sync_playwright'),
+    ('selenium', 'from selenium import webdriver'),
+    ('pyppeteer', 'from pyppeteer import launch'),
+    ('requests_html', 'from requests_html import HTMLSession'),
+    ('mechanicalsoup', 'from mechanicalsoup import StatefulBrowser'),
+    ('splinter', 'from splinter import Browser'),
+]
+for name, import_stmt in browsers:
+    try:
+        exec(import_stmt)
+        print(f'  [FOUND] {name}')
+    except ImportError:
+        pass
+" 2>/dev/null
+
+# 阶段 2: 检测 Node.js 无头浏览器
+echo ""
+echo "[阶段 2] 检测 Node.js 无头浏览器包..."
+which node >/dev/null && npm list -g --depth=0 2>/dev/null | grep -iE "puppeteer|playwright|selenium|nightmare" || echo "  Node.js 或相关包未安装"
+
+# 阶段 3: 检测系统浏览器可执行文件
+echo ""
+echo "[阶段 3] 检测系统浏览器..."
+SYSTEM_BROWSERS=""
+for cmd in chromium chromium-browser google-chrome google-chrome-stable firefox firefox-esr edge; do
+    if which $cmd >/dev/null 2>&1; then
+        echo "  [FOUND] 系统浏览器: $cmd ($(which $cmd))"
+        SYSTEM_BROWSERS="$SYSTEM_BROWSERS $cmd"
+    fi
+done
+[ -z "$SYSTEM_BROWSERS" ] && echo "  未发现系统浏览器"
+
+# 阶段 4: 检测 MCP 工具 (浏览相关)
+echo ""
+echo "[阶段 4] 检测 MCP 工具..."
+# 检查常见 MCP 服务中可能包含的浏览器工具
+if [ -d "/root/.claude" ]; then
+    echo "  [CHECK] Claude 配置目录存在"
+    # 检查 skills 目录
+    if [ -d "/root/.claude/skills" ]; then
+        SKILL_BROWSER=$(find /root/.claude/skills -name "*.md" -exec grep -l -i "browser\|headless\|puppeteer\|playwright" {} \; 2>/dev/null | head -3)
+        [ -n "$SKILL_BROWSER" ] && echo "  [FOUND] Skills 中可能包含浏览器能力:"
+        [ -n "$SKILL_BROWSER" ] && echo "$SKILL_BROWSER" | sed 's/^/    /'
+    fi
+fi
+
+# 检查 MCP 服务相关配置
+if [ -d "/root/.config/mcp" ] || [ -d "$HOME/.config/mcp" ]; then
+    MCP_CONFIG_DIR=$(find /root ~/.config -name "mcp*" -type d 2>/dev/null | head -5)
+    [ -n "$MCP_CONFIG_DIR" ] && echo "  [CHECK] MCP 配置目录: $MCP_CONFIG_DIR"
+fi
+
+# 检查是否有 MCP 服务器运行
+if command -v mcp >/dev/null 2>&1; then
+    echo "  [FOUND] mcp 命令行工具"
+    mcp list 2>/dev/null || mcp tools 2>/dev/null | grep -i browser || echo "    无法列出 MCP 工具"
+elif [ -f "/usr/local/bin/mcp" ]; then
+    echo "  [FOUND] mcp 工具: /usr/local/bin/mcp"
+fi
+
+# 阶段 5: 检测 Agent 特有的浏览器能力
+echo ""
+echo "[阶段 5] 检测 Agent 浏览器工具..."
+# 检查 Claude Code 相关
+if env | grep -qi "CLAUDE\|ANTHROPIC"; then
+    echo "  [CHECK] Claude 环境变量存在"
+fi
+
+# 检查可能的 Agent Socket/端口 (某些 agent 可能暴露浏览器服务)
+for port in 9222 9223 9224 9225; do
+    if timeout 1 bash -c "echo >/dev/tcp/localhost/$port" 2>/dev/null; then
+        echo "  [FOUND] 本地端口 $port 开放 (可能是浏览器调试端口)"
+    fi
+done
+
+# 检查 Docker 容器中的浏览器
+if command -v docker >/dev/null 2>&1; then
+    DOCKER_BROWSER=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -iE "browser|chrome|firefox|puppeteer" | head -3)
+    [ -n "$DOCKER_BROWSER" ] && echo "  [FOUND] Docker 容器: $DOCKER_BROWSER"
+fi
+
+# 阶段 6: 尝试 playwright 完整安装
+echo ""
+echo "[阶段 6] 验证 playwright 浏览器..."
+python3 -c "
+import subprocess
+import sys
+
+# 尝试启动 playwright 浏览器
+test_code = '''
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    browser.close()
+'''
+
+result = subprocess.run(
+    [sys.executable, '-c', test_code],
+    capture_output=True,
+    text=True,
+    timeout=30
+)
+
+if result.returncode == 0:
+    print('  [OK] playwright chromium: 可用')
+    print('  [MODE] headless=True')
+    sys.exit(0)
+else:
+    error_msg = result.stderr.strip() if result.stderr else 'Unknown error'
+    if 'Executable' in error_msg and 'does not exist' in error_msg:
+        print('  [FAIL] chromium 未安装')
+    elif 'libglib' in error_msg or 'libgtk' in error_msg:
+        print('  [FAIL] 系统库缺失')
+        print('  [HINT] 尝试: playwright install-deps chromium')
+    elif 'Permission' in error_msg:
+        print('  [FAIL] 权限错误')
+    else:
+        print(f'  [FAIL] {error_msg[:200]}')
+    sys.exit(1)
+"
+
+if [ $? -eq 0 ]; then
+    BROWSER_CAPABILITY="playwright"
+    AVAILABLE_BROWSERS="$AVAILABLE_BROWSERS playwright"
+fi
+
+# 阶段 7: 生成检测报告
+echo ""
+echo "============================================================"
+echo "[检测报告] 无头浏览器能力汇总"
+echo "============================================================"
+echo "可用的浏览器能力:"
+[ -z "$AVAILABLE_BROWSERS" ] && echo "  (无)" || echo "  $AVAILABLE_BROWSERS"
+echo ""
+echo "检测到的系统浏览器: $SYSTEM_BROWSERS"
+echo "检测到的 MCP 工具: $(env | grep -i 'MCP' | cut -d= -f1 | tr '\n' ' ')"
+echo ""
+```
+
+**检测结果处理:**
+
+执行上述检测后，根据结果决定下一步：
+
+| 检测结果 | 含义 | 处理方式 |
+|---------|------|---------|
+| `BROWSER_CAPABILITY` 已设置 | 找到可用的无头浏览器 | 使用该浏览器执行测试 |
+| 仅 `SYSTEM_BROWSERS` 有值 | 有系统浏览器但未验证 | 尝试用系统浏览器执行 |
+| 仅 `MCP` 工具存在 | MCP 服务可用 | 调用 MCP 浏览器工具 |
+| 仅 `SKILL_BROWSER` 有值 | Skills 中有相关能力 | 检查并使用该 skill |
+| **均为空** | 没有任何浏览器能力 | **报告致命错误并退出** |
+
+**强制规则:**
+
+1. **禁止降级**: 当无头浏览器能力检测失败时，必须报告错误并终止任务
+2. **禁止跳过**: 不得在无头浏览器不可用时降级到 requests/curl/BeautifulSoup 等非浏览器方式
+3. **必须完整检测**: 必须执行完整的检测流程，尝试所有可能的替代方案
+4. **明确报告**: 必须向用户报告实际可用的浏览器能力
+
+**退出条件**: 如果所有平替方案均失败，必须报告以下信息并终止任务：
+
+```
+[FATAL] 无头浏览器能力不可用
+
+已检测的替代方案:
+- playwright: 不可用 (原因: ...)
+- 系统浏览器: 未安装
+- MCP 工具: 未发现
+- Skills 浏览器能力: 未找到
+
+当前环境无法执行 SPA 渗透测试。
+建议:
+1. 安装 playwright: pip install playwright && playwright install chromium
+2. 安装系统依赖: playwright install-deps chromium
+3. 配置 MCP 浏览器服务
+```
+
+---
+
 ### 0.4 检查结果处理
+
+执行完 0.3 前置检查后，根据结果处理：
+
+```bash
+# 如果无头浏览器能力检测通过
+if [ -n "$BROWSER_CAPABILITY" ]; then
+    echo "[OK] 无头浏览器: $BROWSER_CAPABILITY"
+    echo "[CONTINUE] 继续执行测试..."
+else
+    echo "[FATAL] 无头浏览器能力不可用"
+    echo "[STOP] 任务终止，请先解决浏览器依赖问题"
+    exit 1
+fi
+```
 
 | 检查项 | 状态 | 处理方式 |
 |--------|------|---------|
+| 无头浏览器能力 | 不可用 | **报告致命错误并退出** |
 | requests | 不可用 | **强制安装** `pip install requests` |
-| playwright | 不可用 | **强制安装** `pip install playwright && playwright install chromium` |
-| pyppeteer | 不可用 | **强制安装** `pip install pyppeteer` |
-| browser_tester | 引擎不可用 | **强制安装** playwright 及其浏览器 |
-| deep_api_tester | 不可导入 | 检查 core/ 目录，报告错误 |
-| api_fuzzer | 不可导入 | 检查 core/ 目录，报告错误 |
+| core 模块 | 不可导入 | 检查 core/ 目录，报告错误 |
 
-**强制规则**: 任何核心模块不可用，都必须先解决，不得跳过使用该模块的能力。
+**强制规则**: 无头浏览器是核心能力，**不可用时必须报错退出，不得跳过或降级**。
 
 ---
 
