@@ -274,7 +274,7 @@ class AssetDiscovery:
             from core.dynamic_api_analyzer import DynamicAPIAnalyzer
             
             analyzer = DynamicAPIAnalyzer(self.target)
-            results = analyzer.analyze_full(timeout=30)  # 30秒超时
+            results = analyzer.analyze_full()
             
             for ep in results.get('endpoints', []):
                 path = ep.get('path', '')
@@ -309,7 +309,7 @@ class AssetDiscovery:
             
             print("  [API Hook] 启动...")
             interceptor = APIInterceptor(self.target)
-            hook_results = interceptor.hook_all_apis(timeout=30)  # 30秒超时
+            hook_results = interceptor.hook_all_apis()
             
             # 保存 Hook 结果到上下文
             self.ctx.hooked_apis = hook_results.get('endpoints', [])
