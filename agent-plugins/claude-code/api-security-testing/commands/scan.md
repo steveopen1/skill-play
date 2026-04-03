@@ -1,9 +1,11 @@
 ---
-description: "APSEC 完整扫描模式。/api-security-testing:scan [目标URL]。Triggers on: '/api-security-testing:scan', '/api-security-testing scan', 'api-security-testing scan'."
+description: "APSEC 完整扫描模式。/api-security-testing:scan [目标URL]。Triggers on: '/api-security-testing:scan', '/api-security-testing scan', 'api-security-testing scan', '完整扫描', '全流程测试'."
 argument-hint: "[目标URL]"
 ---
 
 ## APSEC Scan - 完整扫描
+
+加载 Skill: `skills/api-security-testing/SKILL.md`
 
 执行完整的 API 安全测试扫描流程：
 
@@ -18,7 +20,7 @@ argument-hint: "[目标URL]"
 - 智能去重
 
 ### Phase 3: 漏洞检测
-- SQL 注入测试
+- SQL 注入测试 (参考 `references/vulnerabilities/01-sqli-tests.md`)
 - XSS 测试
 - IDOR 测试
 - 敏感数据暴露
