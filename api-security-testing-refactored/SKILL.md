@@ -851,12 +851,115 @@ flowchart TD
        
        page.wait_for_timeout(8000)  # 等待JS完全执行
        
-       # 尝试触发更多请求（点击页面、滚动等）
+       # 【重要】模拟用户操作触发更多API！
        try:
+           # 1. 点击页面触发加载
            page.click('body')
            page.wait_for_timeout(2000)
-       except:
-           pass
+           
+           # 2. 如果有登录表单，尝试触发登录接口
+           try:
+               # 查找登录按钮
+               page.click('button[type="submit"]')
+               page.wait_for_timeout(3000)
+           except:
+               pass
+           
+           # 3. 触发更多交互（滚动、悬停等）
+           page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+           page.wait_for_timeout(2000)
+           
+           # 4. 模拟输入框获取焦点
+           try:
+               inputs = page.query_selector_all('input')
+               for inp in inputs[:3]:
+                   inp.click()
+                   inp.type('test')
+                   page.wait_for_timeout(500)
+           except:
+               pass
+           
+       except Exception as e:
+           print(f'交互操作失败: {e}')
+
+2. 【重要】多目标队列管理机制
+
+   【核心问题】同时发现多目标时如何管理？
+   
+   ```
+   # 多目标测试队列
+   TEST_QUEUE = []        # 待测试目标队列
+   TESTED = set()        # 已测试目标
+   
+   # 发现新目标时的处理
+   def on_discover_target(url, target_type):
+       if url not in TESTED and url not in [t['url'] for t in TEST_QUEUE]:
+           TEST_QUEUE.append({
+               'url': url,
+               'type': target_type,  # SPA前端/API/子域名
+               'parent': current_target,
+               'discovered_from': 'js_analysis'
+           })
+   
+   # 迭代处理队列
+   while TEST_QUEUE:
+       current = TEST_QUEUE.pop(0)
+       TESTED.add(current['url'])
+       test_target(current)
+   ```
+   
+   【多目标发现场景】
+   - 发现新子域名：console.ncszkpark.com → cdp-api.ncszkpark.com
+   - 发现新路径：/ipark-admin → /ipark-wxlite
+   - 发现新服务：主站 → /idaas认证服务
+   
+   【处理原则】
+   - 发现新域名 → 加入TEST_QUEUE → 继续当前目标 → 后续处理
+   - 发现新路径 → 加入TEST_QUEUE → 继续当前目标
+   - 发现新服务 → 加入TEST_QUEUE → 深入分析当前目标
+
+3. 【重要】配置文件发现后的持续采集
+
+   【问题】发现_app.config.js后只分析了配置，没有继续采集
+   
+   ```
+   # 发现配置文件后的正确流程：
+   1. 立即分析配置文件 → 提取API配置
+   2. 【继续使用Playwright采集】→ 不要中断！
+   3. 用Playwright访问配置文件中的URL
+   4. 用Playwright触发登录等操作
+   
+   # 示例：
+   发现 VITE_GLOB_API_URL = /ipark
+   发现 VITE_GLOB_DOMAIN_URL = https://console.ncszkpark.com/
+   
+   # 继续用Playwright：
+   1. page.goto('https://console.ncszkpark.com/ipark-admin')
+   2. page.click('button[type="submit"]')  # 触发登录
+   3. 拦截登录API请求 → 发现真实API端点
+   ```
+
+4. 【重要】简化JS字符串匹配（避免正则错误）
+   
+   ```
+   # 复杂正则容易失败，使用简单字符串匹配
+   def extract_strings(content):
+       patterns = [
+           r'["\']([/][a-zA-Z0-9_/-]+)["\']',  # 路径
+           r'["\'](https?://[^\s"\'\\]+)["\']',  # URL
+       ]
+       found = []
+       for p in patterns:
+           found.extend(re.findall(p, content))
+       return found
+   
+   def analyze_js_simple(content):
+       strings = extract_strings(content)
+       for s in strings:
+           if len(s) > 5 and '/' in s:
+               if any(kw in s.lower() for kw in ['login', 'user', 'admin', 'api', 'getInfo', 'save']):
+                   ALL_APIS.add(s)
+   ```
 
 2. 【重要】Playwright失败时的Fallback机制
    
