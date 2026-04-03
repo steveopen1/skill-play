@@ -3,7 +3,17 @@ description: API Security Testing - 快速测试模式
 agent: build
 ---
 
-针对特定 API 端点进行深度安全测试：
+针对特定 API 端点进行深度安全测试。
+
+## 加载漏洞测试模板
+
+@references/vulnerabilities/01-sqli-tests.md
+
+@references/vulnerabilities/04-idor-tests.md
+
+@references/vulnerabilities/05-sensitive-data-tests.md
+
+@references/validation.md
 
 ## 测试范围
 - SQL 注入 (SQLi)
@@ -18,5 +28,3 @@ agent: build
 3. 执行测试用例
 4. 验证漏洞存在
 5. 生成测试报告
-
-加载 references/vulnerabilities/ 目录下的漏洞测试模板获取详细测试方法。
