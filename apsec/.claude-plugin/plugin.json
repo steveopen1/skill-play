@@ -1,0 +1,14 @@
+{
+  "name": "api-security-testing",
+  "version": "1.0.0",
+  "description": "全自动 API 安全测试插件 - 内置赛博监工持续监督循环执行",
+  "author": "MonkeyCode",
+  "homepage": "https://github.com/steveopen1/skill-play",
+  "license": "MIT",
+  "keywords": [
+    "security",
+    "api-testing",
+    "penetration-testing",
+    "vulnerability-assessment"
+  ]
+}

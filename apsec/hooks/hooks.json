@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "agent",
+            "agent": "agents/cyber-supervisor.md",
+            "description": "工具执行后检查结果，决定是否继续"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "agent",
+            "agent": "agents/cyber-supervisor.md",
+            "description": "工具执行失败时触发压力升级"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "agent",
+            "agent": "agents/cyber-supervisor.md",
+            "description": "会话停止前检查是否需要继续循环"
+          }
+        ]
+      }
+    ]
+  }
+}
