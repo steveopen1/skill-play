@@ -939,6 +939,94 @@ flowchart TD
    3. 拦截登录API请求 → 发现真实API端点
    ```
 
+3. 【重要】配置文件URL分类测试（curl批量探测）
+
+   【问题】发现配置文件的URL后不知道是API接口还是Web路由
+   
+   【解决方案】批量curl探测 + 自动分类
+   
+   ```
+   # 配置文件URL分类测试流程
+   def classify_config_urls(config_urls):
+       """
+       1. 对配置中的所有URL进行批量curl探测
+       2. 根据响应判断类型：
+          - JSON响应 → API接口 → 直接curl测试漏洞
+          - HTML响应 → Web路由 → Playwright访问测试
+       """
+       api_urls = []      # 疑似API接口
+       route_urls = []    # 疑似Web路由
+       
+       for url in config_urls:
+           full_url = url if url.startswith('http') else base_url + url
+           
+           try:
+               r = requests.get(full_url, timeout=5, verify=False)
+               ct = r.headers.get('Content-Type', '')
+               content_len = len(r.text)
+               
+               # 判断类型
+               if 'json' in ct.lower():
+                   # JSON响应 → API接口
+                   api_urls.append((url, full_url, r))
+                   
+               elif content_len > 500 and ('<html' in r.text.lower() or '<!doctype' in r.text.lower()):
+                   # HTML响应 → Web路由
+                   route_urls.append((url, full_url))
+                   
+               elif r.status_code == 200 and content_len > 0:
+                   # 可能是重定向或特殊响应
+                   route_urls.append((url, full_url))
+                   
+               else:
+                   # 其他 → 需要进一步测试
+                   route_urls.append((url, full_url))
+                   
+           except Exception as e:
+               # 连接失败 → 可能是内网服务
+               pass
+       
+       return api_urls, route_urls
+   
+   # 对API接口直接curl测试漏洞
+   def test_api_vulns(api_urls):
+       for url, full_url, response in api_urls:
+           # CORS测试
+           r = requests.get(full_url, headers={'Origin': 'https://evil.com'})
+           if r.headers.get('Access-Control-Allow-Origin'):
+               print(f"[CORS] {url}")
+           
+           # SQL注入测试
+           r = requests.get(full_url + "'")
+           if 'sql' in r.text.lower() or 'error' in r.text.lower():
+               print(f"[SQLi] {url}")
+   
+   # 对Web路由使用Playwright访问
+   def test_routes_with_browser(route_urls):
+       for url, full_url in route_urls:
+           # 使用Playwright访问
+           page.goto(full_url)
+           # 拦截请求，分析页面结构
+   ```
+
+   【实战案例】
+   从配置文件发现：
+   - VITE_GLOB_API_URL: /ipark
+   - VITE_GLOB_APP_LICENSE: /ipark-wxlite/no-license
+   
+   curl探测结果：
+   - /ipark → HTML响应 → Web路由
+   - /ipark-wxlite/* → 404 → 需要POST测试
+   
+   【重要】POST探测同样重要！
+   ```
+   # 对404的路径进行POST测试
+   for url in route_urls:
+       r_post = requests.post(full_url, json={})
+       if r_post.status_code not in [404, 405]:
+           print(f"[疑似API] {url} - POST可访问")
+   ```
+
 4. 【重要】简化JS字符串匹配（避免正则错误）
    
    ```
