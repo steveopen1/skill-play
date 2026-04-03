@@ -1,5 +1,5 @@
 ---
-description: "APSEC 赛博监工模式。/apsec:hook [on|off|status]。Triggers on: '/apsec:hook', '/apsec hook', 'apsec hook on', 'apsec hook off'."
+description: "APSEC 赛博监工模式。/api-security-testing:hook [on|off|status]。Triggers on: '/api-security-testing:hook', '/api-security-testing hook', 'api-security-testing hook on', 'api-security-testing hook off'."
 argument-hint: "[on|off|status]"
 ---
 
@@ -31,8 +31,8 @@ argument-hint: "[on|off|status]"
 ### 使用
 
 ```
-/apsec:hook on
-/apsec:hook off
-/apsec:hook status
-/apsec hook on
+/api-security-testing:hook on
+/api-security-testing:hook off
+/api-security-testing:hook status
+/api-security-testing hook on
 ```

@@ -6,7 +6,7 @@
 
 ```
 skill-play/
-├── apsec/                          # Claude Code CLI 插件形态
+├── api-security-testing/              # Claude Code CLI 插件形态
 │   ├── .claude-plugin/            # 插件配置
 │   │   └── plugin.json
 │   ├── skills/                    # Skill 文件
@@ -36,15 +36,15 @@ skill-play/
 
 ## 三种形态说明
 
-### 1. Claude Code CLI 插件 (`apsec/`)
+### 1. Claude Code CLI 插件 (`api-security-testing/`)
 
 符合 Claude Code 官方插件规范的完整插件形态：
 
 ```bash
 # 使用
-claude --plugin-dir ./apsec
+claude --plugin-dir ./api-security-testing
 
-/apsec 安全测试 https://target.com
+/api-security-testing 安全测试 https://target.com
 ```
 
 **特点**:
@@ -93,10 +93,10 @@ from orchestrator import EnhancedAgenticOrchestrator
 
 ```bash
 # 方式一: 使用插件目录
-claude --plugin-dir ./apsec
+claude --plugin-dir ./api-security-testing
 
 # 方式二: 复制到插件目录
-cp -r apsec ~/.claude/plugins/apsec
+cp -r api-security-testing ~/.claude/plugins/
 ```
 
 ### Skill 形态安装

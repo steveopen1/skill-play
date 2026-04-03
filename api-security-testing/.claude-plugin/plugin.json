@@ -1,5 +1,5 @@
 {
-  "name": "apsec",
+  "name": "api-security-testing",
   "version": "1.0.0",
   "description": "全自动 API 安全测试插件 - 内置赛博监工持续监督循环执行",
   "author": "MonkeyCode",
@@ -10,6 +10,6 @@
     "api-testing",
     "penetration-testing",
     "vulnerability-assessment",
-    "apsec"
+    "api-security-testing"
   ]
 }

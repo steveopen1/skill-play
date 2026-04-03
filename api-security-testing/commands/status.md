@@ -1,5 +1,5 @@
 ---
-description: "APSEC 测试状态。/apsec:status。Triggers on: '/apsec:status', '/apsec status'."
+description: "APSEC 测试状态。/api-security-testing:status。Triggers on: '/api-security-testing:status', '/api-security-testing status'."
 ---
 
 ## APSEC Status - 测试状态

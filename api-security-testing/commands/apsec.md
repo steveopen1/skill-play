@@ -1,5 +1,5 @@
 ---
-description: "APSEC API 安全测试 - 赛博监工全自动循环测试。/apsec [scan|test|hook|status|off] [目标URL]。Triggers on: '/apsec', '/apsec scan', '/apsec test', '/apsec hook', '/apsec status', 'apsec scan', 'apsec test'."
+description: "APSEC API 安全测试 - 赛博监工全自动循环测试。/api-security-testing [scan|test|hook|status|off] [目标URL]。Triggers on: '/api-security-testing', '/api-security-testing scan', '/api-security-testing test', '/api-security-testing hook', '/api-security-testing status', 'api-security-testing scan', 'api-security-testing test'."
 argument-hint: "[scan|test|hook|status|off] [目标URL]"
 ---
 
@@ -18,11 +18,11 @@ APSEC = API Security Testing + 赛博监工(Cyber Supervisor)
 ### 使用方式
 
 ```
-/apsec scan https://target.com
-/apsec test https://target.com/api/endpoint
-/apsec hook on
-/apsec status
-/apsec off
+/api-security-testing scan https://target.com
+/api-security-testing test https://target.com/api/endpoint
+/api-security-testing hook on
+/api-security-testing status
+/api-security-testing off
 ```
 
 ### 执行流程

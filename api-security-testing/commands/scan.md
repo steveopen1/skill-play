@@ -1,5 +1,5 @@
 ---
-description: "APSEC 完整扫描模式。/apsec:scan [目标URL]。Triggers on: '/apsec:scan', '/apsec scan', 'apsec scan'."
+description: "APSEC 完整扫描模式。/api-security-testing:scan [目标URL]。Triggers on: '/api-security-testing:scan', '/api-security-testing scan', 'api-security-testing scan'."
 argument-hint: "[目标URL]"
 ---
 
@@ -32,6 +32,6 @@ argument-hint: "[目标URL]"
 ### 使用
 
 ```
-/apsec:scan https://target.com
-/apsec scan https://target.com
+/api-security-testing:scan https://target.com
+/api-security-testing scan https://target.com
 ```
