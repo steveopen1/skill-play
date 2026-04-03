@@ -60,11 +60,34 @@ trigger:
     - "全流程测试"
     - "完整测试"
     - "云存储安全"
+    - "快速扫描"    # 触发quick_scan
+    - "普通扫描"    # 触发normal_scan
+    - "深度扫描"    # 触发deep_scan
+    - "深度测试"    # 触发deep_scan
   patterns:
     - "(?:帮我)?(?:进行?|做)(?:api|接口|安全|云存储|oss)?(?:测试|检测|扫描)"
     - "(?:帮我)?(?:检查?|发现?)(?:api|安全|oss|云存储|bucket)?(?:漏洞|问题)"
     - ".*\\.com/.*(?:login|admin|api|user|order|pay).*"
   auto_trigger: true
+
+scenarios:
+  quick_scan:
+    trigger: ["快速扫描", "简单测试", "5分钟"]
+    depth: minimal
+    time: 5min
+    focus: ["CORS", "公开API", "敏感端口"]
+  
+  normal_scan:
+    trigger: ["普通扫描", "正常测试", "标准扫描"]
+    depth: normal
+    time: 20min
+    focus: ["JS分析", "API测试", "漏洞验证"]
+  
+  deep_scan:
+    trigger: ["深度扫描", "深度测试", "完整测试", "全流程"]
+    depth: full
+    time: 60min
+    focus: ["Playwright采集", "认证绕过", "漏洞利用", "攻击链"]
 
 compatibility:
   required_tools:
@@ -73,11 +96,317 @@ compatibility:
   optional_tools:
     - curl
     - python3
+    - selenium (备用浏览器)
   network: true
   notes: 仅用于授权的安全测试，获取授权后再执行
 ---
 
+### 场景化扫描流程（自动选择）
+
+```
+根据测试时间选择扫描深度：
+
+【quick_scan】5分钟快速扫描
+├─ 目标：快速发现明显漏洞
+└─ 流程：
+   ├─ HTTP探测 + 技术栈识别
+   ├─ 关键路径探测(/admin, /api, /login)
+   └─ 快速漏洞测试(GET参数+常见头部
+
+【normal_scan】20分钟标准扫描
+├─ 目标：全面发现漏洞
+└─ 流程：
+   ├─ 所有基础探测
+   ├─ JS静态分析(快速正则)
+   ├─ 关键端点测试
+   └─ 漏洞验证 + 报告输出
+
+【deep_scan】1小时深度扫描
+├─ 目标：完整渗透测试
+└─ 流程：
+   ├─ Playwright动态采集(Fallback机制)
+   ├─ JS深度分析(AST+正则+路径推断)
+   ├─ 全量API端点测试
+   ├─ 认证绕过测试矩阵
+   ├─ SQL注入深入利用(判断类型+可利用性)
+   ├─ 漏洞链构造
+   └─ 完整报告输出
+```
+
+### 依赖自动Fallback机制
+
+```
+【问题】单一工具失败导致测试中断
+
+【解决方案】多方案自动切换
+
+def collect_with_fallback(url):
+    """
+    1. Playwright (优先)
+       - 优势：动态采集、JS执行、交互触发
+       - 失败：系统依赖缺失、超时
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            # ...采集逻辑
+    except DepMissingError:
+        # 自动检测依赖问题
+        pass  # 切换下一方案
+    except TimeoutError:
+        pass  # 切换下一方案
+    """
+    except Exception as e:
+        logger.warning(f"Playwright失败: {e}")
+
+    """
+    # 方案2: Selenium (备用)
+    try:
+        from selenium import webdriver
+        driver = webdriver.Chrome()
+        # ...采集逻辑
+    except WebDriverException:
+        pass  # 切换下一方案
+    except Exception as e:
+        logger.warning(f"Selenium失败: {e}")
+
+    """
+    # 方案3: requests静态分析 (保底)
+    # 只分析HTML+JS，不执行动态JS
+    r = requests.get(url)
+    # 提取所有JS文件
+    js_files = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', r.text)
+    for js in js_files:
+        # 分析JS内容
+        pass
+    """
+    
+    # 方案4: curl快速探测 (极限情况)
+    # 使用curl批量探测关键路径
+    subprocess.run(["curl", "-s", url])
+
+【系统依赖自动安装】
+try:
+    from playwright.sync_api import sync_playwright
+except Exception as e:
+    # 检测系统依赖问题
+    if "libglib" in str(e) or "Shared object" as e:
+        # 自动安装系统依赖
+        subprocess.run(["playwright", "install-deps", "chromium"])
+    elif "timeout" in str(e).lower():
+        # 使用更长的超时时间重试
+        pass
+```
+
+### 认证自动识别
+
+```
+【问题】遇到401不知道如何绕过
+
+【解决方案】认证测试矩阵
+
+def test_auth_bypass(url):
+    """
+    测试顺序：
+    1. 无认证直接访问
+    """
+    r = requests.get(url)
+    if r.status_code == 200:
+        return "无需认证"
+
+    """
+    2. 伪造Token
+    """
+    fake_tokens = [
+        "admin_token",
+        "null",
+        "' OR '1'='1",
+        "eyJhbGciOiJIUzI1NiJ9.payload.signature",
+    ]
+    for token in fake_tokens:
+        r = requests.get(url, headers={"Authorization": f"Bearer {token}"})
+        if r.status_code == 200:
+            return f"Token伪造成功: {token[:20]}"
+
+    """
+    3. 尝试从响应中提取token
+    """
+    # 有些接口会返回token或session
+    session = r.headers.get("Set-Cookie", "")
+    if session:
+        return f"Cookie: {session[:50]}"
+
+    """
+    4. 测试参数注入
+    """
+    # 有时token在参数中
+    r = requests.get(url + "?token=admin")
+
+    """
+    5. 测试头部注入
+    """
+    headers_to_test = [
+        {"X-Api-Key": "admin"},
+        {"X-Auth-Token": "admin"},
+        {"Authorization": "Basic YWRtaW46YWRtaW4="},  # admin:admin base64
+    ]
+
+    return "未找到认证绕过"
+```
+
+### SQL注入类型自动判断
+
+```
+【问题】将配置错误当作注入报告
+
+【解决方案】注入类型分类
+
+def analyze_sqli_type(response):
+    """
+    1. 判断是否是MyBatis配置错误
+    """
+    if "ibator" in response or "mybatis" in response.lower():
+        if "#{" in response or "${" in response:
+            return {
+                "type": "MyBatis参数化配置不当(非注入",
+                "risk": "低",
+                "suggestion": "后端使用了${}但框架层面有防护"
+            }
+
+    """
+    2. 判断是否是SQL注入
+    """
+    if "sql" in response.lower() and "error" in response.lower():
+        return {
+            "type": "SQL注入",
+            "risk": "高",
+            "suggestion": "存在SQL注入漏洞"
+        }
+
+    """
+    3. 判断是否可利用
+    """
+    # 检查是否有报错注入、时间盲注、布尔盲注等利用方式
+    return {"type": "需要进一步测试", "risk": "未知"}
+```
+
+### JS智能分析（分层提取）
+
+```
+【问题】大文件正则匹配效率低，API提取不准
+
+【解决方案】三层提取法
+
+def extract_apis(js_content):
+    """
+    第一层：快速正则扫描（80% API）
+    - 优势：快速，适用大多数情况
+    """
+    patterns = [
+        r'["\'](/[a-zA-Z0-9_/-]+(?:login|user|admin|menu|api|get|save|update|delete)[^"\']*)["\']',
+        r'axios\.[a-z]+\(["\']([^"\']+)["\']',
+        r'\.get\(["\']([^"\']+)["\']',
+        r'\.post\(["\']([^"\']+)["\']',
+    ]
+    apis = []
+    for p in patterns:
+        apis.extend(re.findall(p, js_content))
+    
+    """
+    第二层：Vue路径推断（10%）
+    - 从Vue组件路径推断可能的API
+    - Vue: /views/user/UserList.vue → API: /api/user/list
+    """
+    vue_paths = re.findall(r'/views/([a-zA-Z0-9_/-]+)\.vue', js_content)
+    for path in vue_paths:
+        parts = path.split('/')
+        # 转换Vue路径为API路径
+        api = '/api/' + '/'.join(parts)
+        apis.append(api)
+    
+    """
+    第三层：请求拦截验证（10%）
+    - 使用Playwright访问，拦截真实请求
+    """
+    # 见Playwright采集流程
+
+    return deduplicate(apis)
+```
+
+### 交互自动触发
+
+```
+【问题】Playwright只采集静态资源，无法触发登录等操作
+
+【解决方案】自动模拟用户交互
+
+def auto_interact(page):
+    """
+    1. 点击页面触发加载
+    """
+    try:
+        page.click('body')
+        page.wait_for_timeout(2000)
+    except:
+        pass
+    
+    """
+    2. 滚动页面触发懒加载
+    """
+    try:
+        page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+        page.wait_for_timeout(2000)
+    except:
+        pass
+    
+    """
+    3. 填写登录表单并提交
+    """
+    try:
+        # 查找输入框
+        inputs = page.query_selector_all('input')
+        for inp in inputs[:5]:
+            try:
+                inp.click()
+                inp.type('test', delay=100)
+                page.wait_for_timeout(500)
+            except:
+                pass
+        
+        # 点击提交按钮
+        submit_btn = page.query_selector('button[type="submit"]')
+        if submit_btn:
+            submit_btn.click()
+            page.wait_for_timeout(3000)
+    except:
+        pass
+    
+    """
+    4. 导航到其他页面
+    """
+    try:
+        # 尝试点击菜单链接
+        links = page.query_selector_all('a[href]')
+        for link in links[:3]:
+            href = link.get_attribute('href')
+            if href and not href.startswith('#'):
+                link.click()
+                page.wait_for_timeout(2000)
+    except:
+        pass
+```
+
+---
+
 ## 前置检查
+
+### 授权确认
+
+**执行前必须确认**：
+- 用户是否拥有目标的合法授权
+- 测试范围是否明确
+- 是否需要保密协议(NDA)
 
 ### 依赖可用性
 
