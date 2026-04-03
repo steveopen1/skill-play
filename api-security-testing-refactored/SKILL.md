@@ -3,16 +3,22 @@ name: api-security-testing
 description: |
   针对授权目标进行专业的 REST/GraphQL API 安全评估与漏洞检测。
   
-  【何时触发】当用户提到以下内容时立即使用此技能：
+  【触发条件】当用户提供URL并要求测试时，自动执行深度扫描：
   - "帮我做安全测试"、"帮我检测漏洞"、"API安全扫描"
   - "渗透测试"、"安全审计"、"漏洞评估"
   - "检查这个系统安不安全"、"测试接口安全"
   - "生成安全报告"、"全流程测试"、"完整的安全检测"
   - 提供了一个URL并说"测一下"、"检测漏洞"、"安全测试"
   
-  【注意】即使用户没有说"安全"但提供了API/网站URL并要求"测试"、"检测"、"扫描"，也视为隐含的安全测试需求，应主动触发。
-
-  【重要前提】必须确认用户拥有该目标的合法授权！未授权的扫描是违法的。
+  【每次都深度扫描】不区分快速/普通/深度，每次测试都执行完整流程：
+  - 自动多方案采集(Playwright→Selenium→requests)
+  - 自动JS深度分析(正则+AST+路径推断)
+  - 自动API批量测试
+  - 自动漏洞深入验证
+  - 自动认证绕过矩阵测试
+  - 自动攻击链构造
+  
+  【重要】必须确认用户拥有该目标的合法授权！
   
   【PUA自动模式】（无需用户说"继续"，自动深入直到完成）
   
@@ -60,10 +66,6 @@ trigger:
     - "全流程测试"
     - "完整测试"
     - "云存储安全"
-    - "快速扫描"    # 触发quick_scan
-    - "普通扫描"    # 触发normal_scan
-    - "深度扫描"    # 触发deep_scan
-    - "深度测试"    # 触发deep_scan
   patterns:
     - "(?:帮我)?(?:进行?|做)(?:api|接口|安全|云存储|oss)?(?:测试|检测|扫描)"
     - "(?:帮我)?(?:检查?|发现?)(?:api|安全|oss|云存储|bucket)?(?:漏洞|问题)"
@@ -71,23 +73,25 @@ trigger:
   auto_trigger: true
 
 scenarios:
-  quick_scan:
-    trigger: ["快速扫描", "简单测试", "5分钟"]
-    depth: minimal
-    time: 5min
-    focus: ["CORS", "公开API", "敏感端口"]
-  
-  normal_scan:
-    trigger: ["普通扫描", "正常测试", "标准扫描"]
-    depth: normal
-    time: 20min
-    focus: ["JS分析", "API测试", "漏洞验证"]
-  
-  deep_scan:
-    trigger: ["深度扫描", "深度测试", "完整测试", "全流程"]
+  default:
+    trigger: ["安全测试", "渗透测试", "漏洞检测", "全流程", "完整测试"]
     depth: full
-    time: 60min
-    focus: ["Playwright采集", "认证绕过", "漏洞利用", "攻击链"]
+    time: 直到完成
+    description: 默认深度扫描模式
+    auto_continue: true  # 自动继续，不等待用户指令
+    
+  quick_check:
+    trigger: ["快速检查", "简单看看"]
+    depth: basic
+    time: 5min
+    description: 快速检查(仅关键项)
+    warning: "建议使用完整深度扫描获取更全面的结果"
+  
+  # 内部使用，不对外触发
+  fuzzing:
+    trigger: []
+    depth: fuzzing
+    description: Fuzzing专项测试
 
 compatibility:
   required_tools:
