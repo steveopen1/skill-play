@@ -7,9 +7,9 @@
 ```
 agent-plugins/
 ├── CLAUDE-CODE/
-│   └── api-security-testing/       # API 安全测试插件
+│   └── api-security-testing/       # Claude Code API 安全测试插件
 ├── OPENCODE/
-│   └── (future plugins)
+│   └── api-security-testing/        # OpenCode API 安全测试插件
 └── README.md
 ```
 
@@ -50,7 +50,30 @@ cp -r claude-code/api-security-testing ~/.claude/plugins/
 
 ### OpenCode 插件
 
-(开发中...)
+#### api-security-testing
+
+全自动 API 安全测试插件，专为 OpenCode 设计。
+
+```bash
+# 复制到项目 .opencode 目录
+cp -r agent-plugins/OPENCODE/api-security-testing <your-project>/.opencode/skills/
+
+# 或复制到全局配置
+cp -r agent-plugins/OPENCODE/api-security-testing ~/.config/opencode/skills/
+```
+
+**使用方式:**
+```
+/api-security-testing scan https://target.com   # 完整扫描
+/cyber-supervisor on                            # 开启赛博监工
+/cyber-supervisor status                        # 查看状态
+```
+
+**功能:**
+- SKILL.md 基于 OpenCode Agent Skills 规范
+- cyber-supervisor.js 插件实现自动监督
+- 事件钩子: session.created, tool.execute.after, session.idle
+- 自定义工具: cyber-supervisor 控制接口
 
 ## License
 
