@@ -101,9 +101,11 @@ flowchart TD
    - 记录所有静态资源加载
 ```
 
-## 阶段2：JS采集【强制】
+## 阶段2：JS采集【强制·禁止降级】
 
-**【禁止降级】本阶段必须使用Playwright，不允许使用Selenium/requests/curl替代**
+**【禁止降级采集阶段】必须使用Playwright，不允许降级到Selenium/requests**
+
+**【允许】分析阶段可使用curl进行补充**
 
 ```
 【核心目标】捕获所有流量，不只分析JS文件！
