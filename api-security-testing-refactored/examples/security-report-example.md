@@ -2,9 +2,9 @@
 
 ## 执行摘要
 
-- **测试目标**: http://58.215.18.57:91
-- **测试时间**: 2026-04-01 07:43:54
-- **测试工具**: Deep API Tester v5.5
+- **测试目标**: http://[TARGET]
+- **测试时间**: [TEST_DATE]
+- **测试工具**: [TOOL_NAME]
 
 ## 发现统计
 
@@ -52,7 +52,7 @@ GET /auth/logout
 ### Unauthorized Access - 配置接口未授权
 
 - **严重程度**: HIGH
-- **端点**: http://58.215.18.57:91/system/config/list
+- **端点**: http://[TARGET]/system/config/list
 - **证据**: Status: 200, 无需认证即可访问系统配置
 - **影响**: 攻击者可获取系统敏感配置信息
 - **修复建议**: 对配置接口添加认证校验
@@ -60,7 +60,7 @@ GET /auth/logout
 ### Unauthorized Access - 系统配置泄露
 
 - **严重程度**: HIGH
-- **端点**: http://58.215.18.57:91/system/config
+- **端点**: http://[TARGET]/system/config
 - **证据**: Status: 200
 - **影响**: 系统配置信息泄露
 - **修复建议**: 添加权限验证
