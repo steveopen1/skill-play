@@ -44,7 +44,7 @@ Phase 4: 验证与利用链构造
 Phase 5: 自动报告生成
 ```
 
-### 使用方式
+### 命令使用
 
 当用户提到以下关键词时自动激活：
 - "API 安全测试"
@@ -87,6 +87,34 @@ Phase 5: 自动报告生成
 - 漏洞详情（严重程度、位置、验证步骤）
 - 利用链说明
 - 修复建议
+
+### 外部测试引擎
+
+如需使用独立的 Python 测试引擎，可以调用 Claude Code 版本的 core 模块：
+
+```bash
+# 克隆仓库
+git clone https://github.com/steveopen1/skill-play.git
+
+# 进入测试引擎目录
+cd agent-plugins/CLAUDE-CODE/api-security-testing
+
+# 安装依赖
+pip install playwright requests beautifulsoup4
+playwright install chromium
+
+# 运行测试
+python3 core/deep_api_tester_v55.py https://target.com/ output.md
+```
+
+### 赛博监工控制
+
+```bash
+/cyber-supervisor on    # 开启监督
+/cyber-supervisor off   # 关闭监督
+/cyber-supervisor status  # 查看状态
+/cyber-supervisor reset  # 重置状态
+```
 
 ### 注意事项
 

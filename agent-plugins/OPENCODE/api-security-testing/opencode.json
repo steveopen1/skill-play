@@ -5,6 +5,33 @@
       "path": ".opencode/skills/api-security-testing/SKILL.md"
     }
   },
+  "command": {
+    "api-security-testing": {
+      "description": "API Security Testing - API 安全测试主入口",
+      "agent": "build",
+      "template": "执行 API 安全测试。加载 skills/api-security-testing/SKILL.md 获取详细指导。"
+    },
+    "scan": {
+      "description": "API 完整扫描模式",
+      "agent": "build",
+      "template": "执行完整的 API 安全测试扫描流程。加载 references/workflows.md 获取测试流程。"
+    },
+    "test": {
+      "description": "API 快速测试模式",
+      "agent": "build",
+      "template": "针对特定端点进行深度安全测试。加载 references/vulnerabilities/ 获取漏洞测试模板。"
+    },
+    "hook": {
+      "description": "赛博监工控制",
+      "agent": "build",
+      "template": "控制赛博监工监督机制。使用 cyber-supervisor 工具进行控制 (on/off/status/reset)。"
+    },
+    "status": {
+      "description": "查看测试状态",
+      "agent": "build",
+      "template": "查看当前 API 安全测试的状态和进度。输出结构化状态报告。"
+    }
+  },
   "permission": {
     "skill": {
       "*": "allow",
