@@ -287,16 +287,20 @@ with sync_playwright() as p:
     cookies = context.cookies()
     local_storage = page.evaluate('Object.keys(localStorage)')
     
-# 【禁止降级】
-# ❌ 不能使用 selenium
-# ❌ 不能使用 pyppeteer
-# ❌ 不能使用 requests 静态解析
-# ❌ 不能使用 curl 抓取JS
+# 【禁止降级采集阶段】
+# ❌ 不能使用 selenium 采集JS
+# ❌ 不能使用 pyppeteer 采集JS
+# ✅ 分析阶段允许使用curl
 ```
 
 ### 阶段3：JS深度分析（AST+正则双模式提取）
+
+**【关键】必须使用AST+正则双模式进行深度分析**
+
+```bash
+# 分析阶段允许使用curl进行补充
+curl -sk "https://target.com/js/app.js" -o app.js
 ```
-【关键】必须使用AST+正则双模式进行深度分析
 
 1. 提取baseURL配置（最优先！）
    patterns:
@@ -463,11 +467,10 @@ core/                              # 核心能力池（原子化）
 | **采集【禁止降级】** | | | |
 | | `browser_collect.py` | SPA应用必须使用Playwright，禁止降级！ | ✅ |
 | | `js_parser.py` | 从JS提取API，使用AST+正则双模式 | ✅ |
-| | `http_client.py` | 快速HTTP探测（补充工具） | |
-| | `api_path_finder.py` | 从响应/JS中自动发现API路径 | |
-| **分析** | | | |
+| **分析【允许降级】** | | | |
 | | `sensitive_finder.py` | 提取password/token/密钥等敏感字段 | |
 | | `response_analyzer.py` | 分析响应类型，识别JSON/HTML/WAF | |
+| | `curl` | 允许使用curl进行补充分析 | 允许 |
 | **测试** | | | |
 | | `sqli_tester.py` | SQL注入测试 | |
 | | `idor_tester.py` | 越权测试 | |
