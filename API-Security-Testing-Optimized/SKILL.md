@@ -34,9 +34,30 @@ trigger:
 遇到Playwright不可用：
 1. 尝试 pip install playwright && playwright install chromium
 2. 尝试 playwright install-deps chromium  # 安装系统依赖（容易被忽略）
-3. 尝试使用MCP工具: headless_browser
-4. 尝试其他方案: selenium, pyppeteer
-5. 最后才使用 requests 静态解析
+3. 【增强】自动检测系统依赖缺失：
+   ```python
+   # 检查 Playwright 系统依赖
+   try:
+       from playwright.sync_api import sync_playwright
+       with sync_playwright() as p:
+           browser = p.chromium.launch(headless=True)
+           browser.close()
+   except Exception as e:
+       if "libglib" in str(e) or "Shared object" in str(e):
+           print("检测到系统依赖缺失，自动安装...")
+           subprocess.run(["playwright", "install-deps", "chromium"], check=True)
+   ```
+4. 尝试使用MCP工具: headless_browser
+5. 尝试其他方案: selenium, pyppeteer
+6. 最后才使用 requests 静态解析
+
+常见依赖缺失及解决：
+| 缺失库 | 解决方案 |
+|--------|----------|
+| libglib-2.0.so | playwright install-deps chromium |
+| libnss3 | 同上 |
+| libatk | 同上 |
+| libpango | 同上 |
 
 遇到requests不可用：
 1. 尝试 pip install requests
@@ -63,7 +84,18 @@ trigger:
 发现Swagger → 立即访问获取更多API
 发现Actuator → 立即测试敏感端点
 发现登录接口 → 立即测试注入/爆破
-```
+发现查询接口 → 立即测试IDOR
+发现文件上传接口 → 立即测试上传绕过
+
+【新增】API 类型对应的测试重点：
+
+| API 类型 | 发现后立即测试 |
+|----------|---------------|
+| 认证类 (login, auth) | SQL注入、暴力破解、用户枚举 |
+| 查询类 (list, get, search) | IDOR，信息泄露、注入 |
+| 操作类 (add, modify, delete) | 越权、批量操作、业务逻辑 |
+| 文件类 (upload, download) | 上传绕过、恶意文件、路径遍历 |
+| 支付类 (pay, refund, order) | 金额篡改、支付绕过、退款欺诈 |
 
 ### 发现即测的例外
 
@@ -347,6 +379,79 @@ token泄露 → 用token访问敏感接口 → 越权操作
 用户枚举 → 获取userId → 查订单 → 获取orderNo → 退款
 ```
 
+### 【新增】利用链推理提示词参考
+
+当发现多个独立漏洞时，可以使用以下提示词进行利用链推理：
+
+```
+## 利用链推理提示词
+
+当发现多个漏洞时，按以下模板进行利用链分析：
+
+### 模板1：认证类漏洞利用链
+```
+发现的漏洞：
+- 登录接口无验证码
+- 暴力破解可获取有效账号
+
+利用链推理：
+1. 使用暴力破解获取有效账号 → 记录账号密码
+2. 使用有效账号登录 → 获取 JWT Token
+3. 使用 Token 访问敏感接口 → 测试越权操作
+4. 越权访问获取更多数据 → 扩大攻击面
+
+验证步骤：
+- 使用获取的 Token 请求 /api/admin/user/list
+- 如果返回用户数据，说明 Token 有效且可利用
+```
+
+### 模板2：用户枚举 + IDOR 利用链
+```
+发现的漏洞：
+- 用户存在/不存在响应不同（用户枚举）
+- 查询接口存在 IDOR
+
+利用链推理：
+1. 用户枚举获取 userId 列表
+2. 使用 userId 遍历查询接口
+3. 如果能查到他人数据，说明存在 IDOR
+
+验证步骤：
+- 使用不同 userId 请求 /api/user/profile?userId=X
+- 对比返回数据是否属于不同用户
+```
+
+### 模板3：敏感信息泄露 + 认证绕过
+```
+发现的漏洞：
+- 某接口返回敏感信息（如 password）
+- 另一接口存在认证绕过
+
+利用链推理：
+1. 认证绕过获取初始访问
+2. 利用敏感信息泄露获取更多凭证
+3. 组合利用扩大攻击面
+
+验证步骤：
+- 绕过认证访问 /api/info 获取数据
+- 检查响应中是否包含可利用的凭证
+```
+
+### 通用利用链验证格式
+```
+漏洞利用链：
+1. [漏洞A] → [漏洞B] → [漏洞C]
+   - 漏洞A: 具体描述
+   - 漏洞B: 基于A的结果能做什么
+   - 漏洞C: 最终能获取什么
+
+2. 验证记录：
+   - Step 1: 执行的操作
+   - Step 2: 返回的结果
+   - Step 3: 是否成功利用
+```
+```
+
 ---
 
 ## HTTP方法与测试策略
@@ -560,6 +665,70 @@ token泄露 → 用token访问敏感接口 → 越权操作
 ```
 【关键】必须使用AST+正则双模式进行深度分析
 
+**【增强】递归分析所有 chunk 文件**
+
+之前只分析了主 JS 文件，实际上 webpack 打包的应用会将代码分散到多个 chunk 文件中。
+
+实现步骤：
+
+```python
+# 1. 从 HTML 中提取所有 JS 引用
+js_files = re.findall(r'<script[^>]+src=["'"]?([^"'">]+)["'"]?', html)
+
+# 2. 递归下载并分析 JS
+visited_js = set()
+to_visit = list(js_files)
+
+while to_visit:
+    js_url = to_visit.pop(0)
+    if js_url in visited_js:
+        continue
+    visited_js.add(js_url)
+    
+    content = download_js(js_url)
+    
+    # 查找动态导入的 JS (import())
+    dynamic_imports = re.findall(r'import\(["']([^"'"]+\.js)["']\)', content)
+    for di in dynamic_imports:
+        if di not in visited_js:
+            to_visit.append(di)
+    
+    # 查找 webpack chunk 引用
+    chunk_refs = re.findall(r'"chunk-([a-z0-9]+)"', content)
+    for chunk_id in chunk_refs:
+        # 尝试构造 chunk URL
+        chunk_url = f"/static/js/chunk-{chunk_id}.js"
+        if chunk_url not in visited_js:
+            to_visit.append(chunk_url)
+```
+
+**【增强】按大小优先级分析**
+
+重要发现：大 chunk 文件通常包含更多业务逻辑
+
+```python
+# 分析策略
+js_files_with_size = []
+for js_url in all_js_files:
+    content = download_js(js_url)
+    size = len(content)
+    js_files_with_size.append((size, js_url))
+
+# 按大小排序，优先分析大文件
+js_files_with_size.sort(reverse=True)
+
+# 优先分析 >50KB 的 chunk
+for size, js_url in js_files_with_size:
+    if size > 50000:
+        analyze_js(js_url, content)
+```
+
+测试结果对比：
+| 之前（仅app.js） | 之后（所有chunk） |
+|------------------|-------------------|
+| 发现 5 个 API | 发现 65+ 个 API |
+| 缺失大量业务接口 | 覆盖完整业务模块 |
+
 1. 提取baseURL配置（最优先！）
    patterns:
    - r'baseURL\s*[:=]\s*["\']([^"\']+)["\']'
@@ -687,6 +856,150 @@ token泄露 → 用token访问敏感接口 → 越权操作
 → 立即访问获取更多API
 → 解析Swagger JSON获取完整API列表
 → 对获取的API立即进行漏洞测试
+```
+
+**阶段4.5：【新增】Fuzzing 组合测试**
+
+重要发现：很多 API 网关只拦截 `/api/*` 路径，根路径（如 `/`, `/health`, `/metrics`）可能直接暴露后端服务。
+
+测试策略：
+
+```python
+# 1. API 前缀字典
+api_prefixes = [
+    # 已发现
+    "/api/admin", "/api/authority", "/api/system",
+    # 通用
+    "/api", "/api/v1", "/api/v2", "/api/v3", "/api/v4",
+    "/rest", "/rest/api", "/webapi",
+    # 认证
+    "/auth", "/oauth", "/oauth2", "/cas", "/sso",
+    # 管理
+    "/admin", "/admin/api", "/manager", "/backend",
+    # 协议
+    "/openapi", "/open/api", "/gateway", "/proxy",
+]
+
+# 2. API 端点字典（根据业务场景扩展）
+api_endpoints = [
+    # 通用 CRUD
+    "login", "logout", "register", "list", "add", "delete", "modify",
+    "getList", "getListOfPage", "detail", "getInfo", "profile",
+    # 用户相关
+    "user", "user/list", "user/add", "user/delete", "user/modify",
+    "user/profile", "user/restPassword", "user/enable", "user/disable",
+    # 角色权限
+    "role", "role/list", "role/add", "role/delete", "role/modify",
+    "menu", "menu/list", "menu/add", "menu/delete", "menu/modify",
+    # 文件操作
+    "file", "upload", "download", "import", "export",
+    "imgUpload", "avatar", "attachment",
+]
+
+# 3. Fuzzing 测试
+for prefix in api_prefixes:
+    for endpoint in api_endpoints:
+        url = target + prefix + "/" + endpoint
+        response = requests.get(url)
+        # 记录返回 200 的接口
+```
+
+**阶段4.6：【新增】API 根路径探测**
+
+重要发现：`http://api.target.com/`、`/health`、`/metrics` 等路径返回 JSON，表明网关只拦截 `/api/*`。
+
+```python
+# 测试非 /api 路径
+root_paths = [
+    "/", "/login", "/auth", "/oauth", "/sso", "/cas",
+    "/health", "/healthz", "/ready", "/status", "/info",
+    "/metrics", "/ping", "/actuator",
+]
+
+for path in root_paths:
+    url = api_base + path
+    response = requests.get(url)
+    if "json" in response.headers.get("Content-Type", ""):
+        # 发现可访问的接口
+```
+
+**阶段4.7：【新增】业务端点模板提示词参考
+
+根据发现的 API 路径模式，使用以下提示词模板扩展测试：
+
+```
+## 业务端点扩展提示词
+
+当发现类似 {resource}/list、{resource}/add 这类 API 模式时，可按以下模板扩展测试：
+
+### 通用 CRUD 端点模式
+```
+发现的模式: /{module}/{operation}
+可能存在的端点:
+- /{module}/list          → 列表查询
+- /{module}/add          → 新增创建
+- /{module}/modify       → 修改更新
+- /{module}/delete       → 删除操作
+- /{module}/detail       → 详情查看
+- /{module}/getInfo      → 信息获取
+- /{module}/export       → 导出数据
+- /{module}/import       → 导入数据
+```
+
+### RESTful 风格端点模式
+```
+发现的模式: /{resource}/{id}
+可能存在的端点:
+- GET  /{resource}/{id}     → 获取详情
+- PUT  /{resource}/{id}     → 完整更新
+- DELETE /{resource}/{id}   → 删除资源
+- PATCH /{resource}/{id}   → 部分更新
+```
+
+### 管理后台常见端点模式
+```
+用户管理: user, users, member, members
+- /admin/user/list, /admin/user/add, /admin/user/delete
+- /system/user/export, /system/user/import
+
+角色权限: role, roles, permission, menu
+- /admin/role/list, /admin/role/add, /admin/role/delete
+- /admin/menu/list, /admin/menu/tree
+
+业务模块: 根据系统功能模块名扩展
+- 物业管理: property, estate, building
+- 订单管理: order, orders, transaction
+- 内容管理: content, article, news
+- 设备管理: device, equipment, sensor
+```
+
+### 端点扩展测试示例
+```
+发现的端点: /api/building/list
+扩展测试:
+1. GET /api/building/list     → 列表
+2. POST /api/building/add    → 新增
+3. POST /api/building/modify → 修改
+4. POST /api/building/delete → 删除
+5. GET /api/building/detail?id=1 → 详情
+6. GET /api/building/export   → 导出
+7. POST /api/building/import → 导入
+```
+
+### API 前缀扩展提示词
+```
+当发现 /api/admin/xxx 时，可尝试:
+- /api/authority/xxx
+- /api/system/xxx
+- /api/common/xxx
+- /api/v1/xxx, /api/v2/xxx, /api/v3/xxx
+
+当发现 /api/xxx 时，可尝试:
+- /rest/api/xxx
+- /webapi/xxx
+- /auth/xxx
+- /oauth/xxx
+```
 ```
 
 **阶段5：漏洞验证（10维度）**
