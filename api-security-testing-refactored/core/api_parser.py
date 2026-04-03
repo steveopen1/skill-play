@@ -1,0 +1,955 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+增强版 API 端点解析器
+
+功能:
+1. 使用 AST 和正则提取 API 端点和参数
+2. 识别参数类型 (path, query, body)
+3. 识别参数约束 (required, optional, enum)
+4. 父路径探测
+5. API 语义分析
+
+使用方式:
+    from core.api_parser import APIEndpointParser
+    
+    parser = APIEndpointParser(target, session)
+    result = parser.parse_js_files(js_files)
+    result = parser.probe_parent_paths()
+"""
+
+import re
+import sys
+import json
+import requests
+from typing import Dict, List, Set, Tuple, Optional, Any
+from dataclasses import dataclass, field
+from urllib.parse import urljoin, urlparse, parse_qs
+from enum import Enum
+
+sys.path.insert(0, '/workspace/skill-play/API-Security-Testing-Optimized')
+
+
+class ParamType(Enum):
+    """参数类型"""
+    PATH = "path"           # /users/{id}
+    QUERY = "query"         # /users?id=1
+    BODY = "body"           # POST data
+    HEADER = "header"       # Authorization
+
+
+class ParamLocation(Enum):
+    """参数位置"""
+    URL = "url"
+    FORM = "form"
+    JSON = "json"
+    PARAMS = "params"  # axios params config
+    HEADER = "header"
+
+
+@dataclass
+class APIParam:
+    """API 参数"""
+    name: str
+    param_type: ParamType
+    location: ParamLocation
+    required: bool = True
+    data_type: str = "string"  # string, number, boolean, object, array
+    enum_values: List[Any] = field(default_factory=list)
+    description: str = ""
+    example: Any = None
+
+
+@dataclass
+class ParsedEndpoint:
+    """解析后的 API 端点"""
+    path: str
+    method: str = "GET"
+    params: List[APIParam] = field(default_factory=list)
+    source: str = ""
+    raw_url: str = ""
+    auth_required: bool = False
+    description: str = ""
+    semantic_type: str = ""  # user_query, file_upload, auth, etc.
+    
+    def get_path_params(self) -> List[APIParam]:
+        return [p for p in self.params if p.param_type == ParamType.PATH]
+    
+    def get_query_params(self) -> List[APIParam]:
+        return [p for p in self.params if p.param_type == ParamType.QUERY]
+    
+    def has_params(self) -> bool:
+        return len(self.params) > 0
+    
+    def to_dict(self) -> Dict:
+        return {
+            'path': self.path,
+            'method': self.method,
+            'params': [{'name': p.name, 'type': p.param_type.value, 'required': p.required} for p in self.params],
+            'source': self.source,
+            'semantic_type': self.semantic_type,
+        }
+
+
+class APIEndpointParser:
+    """API 端点解析器"""
+    
+    def __init__(self, target: str, session: requests.Session = None):
+        self.target = target
+        self.session = session or requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        
+        self.parsed_endpoints: List[ParsedEndpoint] = []
+        self.parent_paths: Set[str] = set()
+        self.js_files: List[str] = []
+    
+    def discover_js_files(self) -> List[str]:
+        """发现 JS 文件"""
+        try:
+            resp = self.session.get(self.target, timeout=10)
+            patterns = [
+                r'<script[^>]+src=["\']?([^"\'>\s]+\.js)["\']?',
+            ]
+            
+            from urllib.parse import urlparse
+            parsed = urlparse(self.target)
+            base_origin = f"{parsed.scheme}://{parsed.netloc}"
+            base_path = parsed.path.rstrip('/')
+            
+            for pattern in patterns:
+                matches = re.findall(pattern, resp.text)
+                for match in matches:
+                    if match.startswith('/'):
+                        # match 是相对于网站根路径的，需要拼接到 origin
+                        # 如果 target 是 /idbd-web，match 是 /idbd-web/xxx
+                        # 则直接用 base_origin + match
+                        url = base_origin + match
+                    elif match.startswith('http'):
+                        url = match
+                    else:
+                        continue
+                    
+                    if parsed.netloc in url:
+                        if url not in self.js_files:
+                            self.js_files.append(url)
+            
+            return self.js_files
+            
+        except Exception as e:
+            print(f"  [WARN] JS 文件发现失败: {e}")
+            return []
+    
+    def parse_js_files(self, js_files: List[str] = None) -> List[ParsedEndpoint]:
+        """解析 JS 文件中的 API 端点"""
+        if js_files is None:
+            js_files = self.discover_js_files()
+        
+        print(f"  [API Parser] 解析 {len(js_files)} 个 JS 文件...")
+        
+        for js_url in js_files:
+            try:
+                resp = self.session.get(js_url, timeout=10)
+                content = resp.text
+                
+                # 使用多种方法提取
+                endpoints = self._extract_axios_endpoints(content, js_url)
+                endpoints.extend(self._extract_fetch_endpoints(content, js_url))
+                endpoints.extend(self._extract_path_patterns(content, js_url))
+                endpoints.extend(self._extract_api_definition(content, js_url))
+                
+                self.parsed_endpoints.extend(endpoints)
+                
+            except Exception as e:
+                print(f"  [WARN] 解析 {js_url}: {e}")
+        
+        # 去重
+        self._deduplicate()
+        
+        # 提取父路径
+        self._extract_parent_paths()
+        
+        print(f"  [API Parser] 发现 {len(self.parsed_endpoints)} 个端点")
+        print(f"  [API Parser] 发现 {len(self.parent_paths)} 个父路径")
+        
+        return self.parsed_endpoints
+    
+    def _extract_axios_endpoints(self, content: str, source: str) -> List[ParsedEndpoint]:
+        """提取 axios 调用的端点"""
+        endpoints = []
+        
+        # axios.get('/api/users')
+        patterns = [
+            (r'axios\.(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']', 'axios'),
+            (r'this\.\$axios\.(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']', 'vue_axios'),
+            (r'axios\.(get|post|put|delete|patch)\s*\(\s*`([^`]+)`', 'axios_template'),
+        ]
+        
+        for pattern, ptype in patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches:
+                method = match[0].upper() if isinstance(match[0], str) and match[0].lower() in ['get', 'post', 'put', 'delete', 'patch', 'head', 'options'] else 'GET'
+                url = match[1] if isinstance(match, tuple) else match
+                
+                # 验证是有效的 HTTP 方法
+                if method not in ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']:
+                    continue
+                
+                # 使用混合方法提取参数
+                url_params = self._extract_params_from_url(url)
+                js_params = self._extract_params_from_js_context(content, url)
+                
+                # 合并参数，去重
+                all_params = url_params.copy()
+                for jp in js_params:
+                    if jp.name not in [p.name for p in all_params]:
+                        all_params.append(jp)
+                
+                endpoint = ParsedEndpoint(
+                    path=url,
+                    method=method,
+                    params=all_params,
+                    source=f'axios_{ptype}',
+                    raw_url=url,
+                    semantic_type=self._infer_semantic_type(url)
+                )
+                endpoints.append(endpoint)
+        
+        return endpoints
+    
+    def _extract_fetch_endpoints(self, content: str, source: str) -> List[ParsedEndpoint]:
+        """提取 fetch 调用的端点"""
+        endpoints = []
+        
+        # fetch('/api/users')
+        pattern = r'fetch\s*\(\s*["\']([^"\']+)["\']'
+        matches = re.findall(pattern, content, re.IGNORECASE)
+        
+        for url in matches:
+            params = self._extract_params_from_url(url)
+            
+            endpoint = ParsedEndpoint(
+                path=url,
+                method='GET',
+                params=params,
+                source='fetch',
+                raw_url=url,
+                semantic_type=self._infer_semantic_type(url)
+            )
+            endpoints.append(endpoint)
+        
+        return endpoints
+    
+    def _extract_path_patterns(self, content: str, source: str) -> List[ParsedEndpoint]:
+        """提取路径模式 (使用更精确的正则)"""
+        endpoints = []
+        
+        # API 路径模式
+        path_patterns = [
+            # /api/users/{id}
+            (r'["\'](/api/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'api_path'),
+            # /users/{id}
+            (r'["\'](/users/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'users_path'),
+            # /v1/admin/*
+            (r'["\'](/v\d+/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'versioned_api'),
+            # RESTful 模式
+            (r'["\'](/[a-z]+/[a-z]+/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'restful'),
+            # /xxx-server/api/xxx 模式 (如 /auth-server/api/xxx)
+            (r'["\'](/[a-zA-Z0-9]+-server/api/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'server_api'),
+            # /idbd-api/xxx 模式
+            (r'["\'](/idbd-api/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'idbd_api'),
+            # /user-server/api/xxx 模式
+            (r'["\'](/user-server/api/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'user_server_api'),
+            # /auth-server/api/xxx 模式
+            (r'["\'](/auth-server/api/[a-zA-Z0-9_/{}?-]+)["\']', 'GET', 'auth_server_api'),
+        ]
+        
+        for pattern, default_method, ptype in path_patterns:
+            matches = re.findall(pattern, content)
+            for url in matches:
+                if self._is_valid_api_path(url):
+                    # 使用混合方法提取参数
+                    url_params = self._extract_params_from_url(url)
+                    js_params = self._extract_params_from_js_context(content, url)
+                    
+                    # 合并参数，去重
+                    all_params = url_params.copy()
+                    for jp in js_params:
+                        if jp.name not in [p.name for p in all_params]:
+                            all_params.append(jp)
+                    
+                    endpoint = ParsedEndpoint(
+                        path=url,
+                        method=default_method,
+                        params=all_params,
+                        source=ptype,
+                        raw_url=url,
+                        semantic_type=self._infer_semantic_type(url)
+                    )
+                    endpoints.append(endpoint)
+        
+        return endpoints
+    
+    def _extract_api_definition(self, content: str, source: str) -> List[ParsedEndpoint]:
+        """从 API 定义中提取 (如 swagger 风格)"""
+        endpoints = []
+        
+        # 查找 API 配置对象 - 只匹配有效的 HTTP 方法
+        valid_methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']
+        
+        patterns = [
+            # { method: 'get', url: '/api/users' }
+            r'["\']?(method|http_method)["\']?\s*:\s*["\'](\w+)["\']',
+            # fetch/axios config
+            r'["\']?(method)["\']?\s*:\s*["\'](\w+)["\']',
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches:
+                if len(match) >= 2:
+                    method_str = match[1].upper()
+                    if method_str in valid_methods:
+                        # 查找附近的 URL
+                        url_match = re.search(r'["\']([/a-zA-Z0-9_{}?-]+)["\']', content[content.find(match[0]):content.find(match[0])+200])
+                        if url_match:
+                            url = url_match.group(0).strip('"\'')
+                            if self._is_valid_api_path(url):
+                                params = self._extract_params_from_url(url)
+                                
+                                endpoint = ParsedEndpoint(
+                                    path=url,
+                                    method=method_str,
+                                    params=params,
+                                    source='api_definition',
+                                    raw_url=url,
+                                    semantic_type=self._infer_semantic_type(url)
+                                )
+                                endpoints.append(endpoint)
+        
+        return endpoints
+    
+    def _extract_params_from_url(self, url: str) -> List[APIParam]:
+        """从 URL 中提取参数"""
+        params = []
+        
+        # 1. 显式路径参数 {id}, :id
+        path_patterns = [
+            r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}',  # {id}
+            r':([a-zA-Z_][a-zA-Z0-9_]*)',      # :id
+        ]
+        
+        for pattern in path_patterns:
+            matches = re.findall(pattern, url)
+            for param_name in matches:
+                data_type = self._infer_param_type(param_name)
+                params.append(APIParam(
+                    name=param_name,
+                    param_type=ParamType.PATH,
+                    location=ParamLocation.URL,
+                    required=True,
+                    data_type=data_type
+                ))
+        
+        # 2. RESTful 风格参数推断 (基于常见模式)
+        # 例如 /users/123 -> id, /users/abc123/profile -> id, /page/1 -> page
+        restful_patterns = [
+            (r'/users?/([a-zA-Z0-9_-]+)/?', 'user_id', 'id'),
+            (r'/orders?/([a-zA-Z0-9_-]+)/?', 'order_id', 'id'),
+            (r'/products?/([a-zA-Z0-9_-]+)/?', 'product_id', 'id'),
+            (r'/categories?/([a-zA-Z0-9_-]+)/?', 'category_id', 'id'),
+            (r'/files?/([a-zA-Z0-9_-]+)/?', 'file_id', 'id'),
+            (r'/records?/([a-zA-Z0-9_-]+)/?', 'record_id', 'id'),
+            (r'/ids?/([a-zA-Z0-9_-]+)/?', 'ids', 'id'),
+            (r'/ids,([a-zA-Z0-9_-]+)', 'ids', 'array'),
+            (r'/page/(\d+)', 'page', 'page'),
+            (r'/p/(\d+)', 'page', 'page'),
+            (r'/(\d+)/page', 'page', 'page'),
+            (r'/size/(\d+)', 'size', 'size'),
+            (r'/limit/(\d+)', 'limit', 'limit'),
+            (r'/offset/(\d+)', 'offset', 'offset'),
+        ]
+        
+        seen_params = {p.name for p in params}
+        for pattern, param_name, param_type in restful_patterns:
+            if param_name not in seen_params:
+                match = re.search(pattern, url)
+                if match:
+                    params.append(APIParam(
+                        name=param_name,
+                        param_type=ParamType.PATH if param_type == 'id' else ParamType.QUERY,
+                        location=ParamLocation.URL,
+                        required=True,
+                        data_type=param_type
+                    ))
+                    seen_params.add(param_name)
+        
+        # 3. 查询参数 ?key=value
+        if '?' in url:
+            query_str = url.split('?')[1] if '?' in url else ''
+            query_params = query_str.split('&')
+            for qp in query_params:
+                if '=' in qp:
+                    param_name = qp.split('=')[0]
+                    if param_name and param_name not in seen_params:
+                        params.append(APIParam(
+                            name=param_name,
+                            param_type=ParamType.QUERY,
+                            location=ParamLocation.URL,
+                            required=False,
+                            data_type='string'
+                        ))
+                        seen_params.add(param_name)
+        
+        return params
+    
+    def _extract_params_from_js_context(self, content: str, api_path: str) -> List[APIParam]:
+        """
+        从 JavaScript 代码上下文中提取参数 (简化版正则)
+        
+        策略: 直接从 axios/fetch 调用模式中提取参数
+        """
+        params = []
+        
+        # 1. axios 调用参数模式
+        # axios.get('/path', { params: { id: 1, page: 1 } })
+        # axios.post('/path', { data: { name: 'xxx' } })
+        axios_patterns = [
+            (r'axios\.\w+\s*\(\s*["\']([^"\']+)["\']\s*,\s*\{([^}]+)\}', 'axios_config'),
+            (r'axios\.\w+\s*\(\s*["\']([^"\']+)["\']\s*,\s*\{([^}]+)\}\s*\)', 'axios_config'),
+        ]
+        
+        for pattern, ptype in axios_patterns:
+            matches = re.findall(pattern, content, re.DOTALL)
+            for match in matches:
+                if isinstance(match, tuple) and len(match) >= 2:
+                    path_from_code = match[0]
+                    config_str = match[1]
+                    
+                    # 如果这个配置匹配的路径包含我们要找的 api_path
+                    if api_path in path_from_code or path_from_code in api_path:
+                        # 提取参数
+                        param_names = re.findall(r'(\w+)\s*:', config_str)
+                        for param_name in param_names:
+                            if param_name not in [p.name for p in params]:
+                                # 判断参数位置
+                                location = ParamLocation.PARAMS if 'params' in config_str else ParamLocation.JSON
+                                params.append(APIParam(
+                                    name=param_name,
+                                    param_type=ParamType.QUERY if 'params' in config_str or 'query' in config_str else ParamType.BODY,
+                                    location=location,
+                                    required=True,
+                                    data_type=self._infer_param_type(param_name)
+                                ))
+        
+        # 2. 查找 fetch 调用
+        # fetch('/path?param1=value1&param2=value2')
+        if 'fetch' in content.lower():
+            fetch_pattern = r'fetch\s*\(\s*["\']([^"\']+)["\']'
+            fetch_matches = re.findall(fetch_pattern, content)
+            for fetch_url in fetch_matches:
+                if api_path in fetch_url or fetch_url in api_path:
+                    # 提取查询参数
+                    if '?' in fetch_url:
+                        query_str = fetch_url.split('?')[1]
+                        query_params = query_str.split('&')
+                        for qp in query_params:
+                            if '=' in qp:
+                                param_name = qp.split('=')[0]
+                                if param_name and param_name not in [p.name for p in params]:
+                                    params.append(APIParam(
+                                        name=param_name,
+                                        param_type=ParamType.QUERY,
+                                        location=ParamLocation.URL,
+                                        required=False,
+                                        data_type='string'
+                                    ))
+        
+        return params
+    
+    def _is_valid_api_path(self, path: str) -> bool:
+        """验证是否是有效的 API 路径"""
+        if not path or len(path) < 2:
+            return False
+        
+        if not path.startswith('/'):
+            return False
+        
+        # 排除明显不是 API 的路径
+        skip_patterns = [
+            r'\.(css|js|jpg|jpeg|png|gif|ico|svg|woff|ttf)$',
+            r'^/static/',
+            r'^/public/',
+            r'^/assets/',
+            r'^/images/',
+            r'^/styles/',
+        ]
+        
+        for pattern in skip_patterns:
+            if re.search(pattern, path, re.I):
+                return False
+        
+        # 必须是有效的路径模式
+        if re.match(r'^/[a-zA-Z]', path):
+            return True
+        
+        return False
+    
+    def _infer_param_type(self, param_name: str) -> str:
+        """推断参数类型"""
+        name_lower = param_name.lower()
+        
+        type_hints = {
+            'id': 'number',
+            'user_id': 'number',
+            'order_id': 'number',
+            'page': 'number',
+            'limit': 'number',
+            'size': 'number',
+            'count': 'number',
+            'page_size': 'number',
+            'is_': 'boolean',
+            'has_': 'boolean',
+            'enable': 'boolean',
+            'active': 'boolean',
+            'enabled': 'boolean',
+            'list': 'array',
+            'ids': 'array',
+            'data': 'object',
+            'info': 'object',
+            'params': 'object',
+            'options': 'object',
+        }
+        
+        for hint, dtype in type_hints.items():
+            if hint in name_lower:
+                return dtype
+        
+        return 'string'
+    
+    def _infer_semantic_type(self, path: str) -> str:
+        """推断 API 的语义类型"""
+        path_lower = path.lower()
+        
+        semantic_mappings = {
+            'auth': ['/auth', '/login', '/logout', '/token', '/signin', '/signup'],
+            'user': ['/user', '/profile', '/account', '/avatar'],
+            'admin': ['/admin', '/manage', '/system', '/config'],
+            'file': ['/file', '/upload', '/download', '/attachment', '/image', '/avatar'],
+            'order': ['/order', '/cart', '/checkout', '/payment'],
+            'product': ['/product', '/goods', '/item', '/sku'],
+            'data': ['/data', '/statistics', '/report', '/analytics'],
+            'api': ['/api', '/v1', '/v2', '/rest'],
+            'search': ['/search', '/query', '/find'],
+            'list': ['/list', '/items', '/records'],
+            'detail': ['/detail', '/info', '/view'],
+            'create': ['/create', '/add', '/new'],
+            'update': ['/update', '/edit', '/modify', '/put'],
+            'delete': ['/delete', '/remove', '/del'],
+        }
+        
+        for semantic_type, keywords in semantic_mappings.items():
+            for keyword in keywords:
+                if keyword in path_lower:
+                    return semantic_type
+        
+        return 'unknown'
+    
+    def _extract_parent_paths(self):
+        """提取父路径"""
+        for ep in self.parsed_endpoints:
+            path = ep.path
+            
+            # 分解路径，提取所有父路径
+            parts = path.strip('/').split('/')
+            
+            for i in range(1, len(parts)):
+                parent = '/' + '/'.join(parts[:i])
+                if parent != path:  # 不包括自身
+                    self.parent_paths.add(parent)
+            
+            # 也包括根路径
+            if len(parts) > 0:
+                self.parent_paths.add('/' + parts[0])
+        
+        # 过滤
+        valid_parents = set()
+        for parent in self.parent_paths:
+            if self._is_valid_api_path(parent):
+                valid_parents.add(parent)
+        
+        self.parent_paths = valid_parents
+    
+    def _deduplicate(self):
+        """去重"""
+        seen = set()
+        unique = []
+        
+        for ep in self.parsed_endpoints:
+            key = f"{ep.method}:{ep.path}"
+            if key not in seen:
+                seen.add(key)
+                unique.append(ep)
+        
+        self.parsed_endpoints = unique
+    
+    def probe_parent_paths(self, known_api_paths: list = None) -> Dict[str, Any]:
+        """
+        探测父路径，返回可访问的路径
+        
+        Args:
+            known_api_paths: 已知的后端 API 路径列表（如 ['/prod-api/auth/login']）
+                             如果为 None，会自动尝试常见路径
+        """
+        print(f"  [API Parser] 探测父路径 ({len(self.parent_paths)} 个)...")
+        
+        accessible_paths = {}
+        
+        # 从 target 中提取根路径
+        from urllib.parse import urlparse
+        parsed = urlparse(self.target)
+        root_origin = f"{parsed.scheme}://{parsed.netloc}"
+        subpath = parsed.path.rstrip('/')
+        
+        # 检测是否有子路径（前端路由）
+        has_subpath = len(subpath.split('/')) > 1
+        if has_subpath:
+            print(f"  [INFO] 检测到前端子路径: {subpath}")
+        
+        # 常见的根路径 API（用于检测前缀）
+        root_api_paths = [
+            '/prod-api/auth/login',
+            '/prod-api/system/user/info',
+            '/prod-api/captcha',
+            '/api/auth/login',
+            '/api/system/user/info',
+            '/admin-api/auth/login',
+        ]
+        
+        # 探测根路径的 API 前缀
+        api_prefix = None
+        root_url = root_origin
+        
+        for path in root_api_paths:
+            url = root_url + path
+            try:
+                r = self.session.get(url, timeout=5, allow_redirects=False)
+                ct = r.headers.get('Content-Type', '').lower()
+                if 'json' in ct and r.status_code != 404:
+                    if '/prod-api/' in path:
+                        api_prefix = '/prod-api/'
+                    elif '/admin-api/' in path:
+                        api_prefix = '/admin-api/'
+                    elif '/api/' in path:
+                        api_prefix = '/api/'
+                    print(f"  [API Prefix] 检测到后端前缀: {api_prefix}")
+                    break
+            except:
+                pass
+        
+        # 根据是否有子路径，决定如何探测
+        for parent in self.parent_paths:
+            if has_subpath and api_prefix:
+                # 有子路径 + 有前缀: 探测根路径的 API
+                # URL: root_origin + api_prefix + parent
+                test_path = api_prefix + parent.lstrip('/')
+                url = root_origin + test_path
+            elif api_prefix:
+                # 无子路径 + 有前缀: 探测 target + 前缀 + parent
+                test_path = self.target.rstrip('/') + api_prefix + parent.lstrip('/')
+                url = test_path
+            else:
+                # 无前缀: 探测原始路径
+                url = self.target.rstrip('/') + parent
+                test_path = parent
+            
+            try:
+                r = self.session.get(url, timeout=5, allow_redirects=False)
+                
+                ct = r.headers.get('Content-Type', '').lower()
+                is_api = 'json' in ct or '{' in r.text[:100]
+                
+                result = {
+                    'path': test_path,
+                    'original_path': parent,
+                    'prefix': api_prefix,
+                    'status': r.status_code,
+                    'content_type': ct,
+                    'is_api': is_api,
+                    'content_length': len(r.text),
+                }
+                
+                if is_api:
+                    print(f"    [API] {test_path}: {r.status_code}")
+                    accessible_paths[test_path] = result
+                
+            except Exception as e:
+                pass
+        
+        return accessible_paths
+    
+    def get_endpoints_summary(self) -> str:
+        """获取端点摘要"""
+        summary = []
+        summary.append(f"端点总数: {len(self.parsed_endpoints)}")
+        
+        # 按方法统计
+        methods = {}
+        for ep in self.parsed_endpoints:
+            m = ep.method
+            methods[m] = methods.get(m, 0) + 1
+        
+        summary.append("按方法:")
+        for m, count in sorted(methods.items()):
+            summary.append(f"  {m}: {count}")
+        
+        # 按语义类型统计
+        semantic = {}
+        for ep in self.parsed_endpoints:
+            t = ep.semantic_type or 'unknown'
+            semantic[t] = semantic.get(t, 0) + 1
+        
+        summary.append("按语义类型:")
+        for t, count in sorted(semantic.items(), key=lambda x: -x[1]):
+            summary.append(f"  {t}: {count}")
+        
+        # 带参数的端点
+        with_params = sum(1 for ep in self.parsed_endpoints if ep.has_params())
+        summary.append(f"带参数端点: {with_params}")
+        
+        return "\n".join(summary)
+
+
+class APIFuzzer:
+    """API Fuzzer - 对发现的端点进行模糊测试"""
+    
+    def __init__(self, target: str, session: requests.Session = None):
+        self.target = target
+        self.session = session or requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        self.fuzz_results = []
+    
+    def fuzz_endpoints(self, endpoints: List[ParsedEndpoint], parent_probe_result: Dict = None) -> List[Dict]:
+        """对端点进行 fuzzing"""
+        print(f"\n  [Fuzzer] Fuzzing {len(endpoints)} 个端点...")
+        
+        fuzz_results = []
+        
+        # 常见 fuzzing payload
+        fuzz_payloads = {
+            'sqli': [
+                "' OR '1'='1",
+                "' OR 1=1--",
+                "admin'--",
+                "' UNION SELECT NULL--",
+                "1' AND '1'='1",
+            ],
+            'xss': [
+                "<script>alert(1)</script>",
+                "<img src=x onerror=alert(1)>",
+                "javascript:alert(1)",
+                "<svg onload=alert(1)>",
+            ],
+            'path_traversal': [
+                "../../../etc/passwd",
+                "..\\..\\..\\windows\\win.ini",
+                "%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+                "....//....//etc/passwd",
+            ],
+            'cmd_injection': [
+                "; ls",
+                "| cat /etc/passwd",
+                "`whoami`",
+                "$(whoami)",
+            ],
+            'ssti': [
+                "{{7*7}}",
+                "${7*7}",
+                "<%= 7*7 %>",
+            ],
+        }
+        
+        for ep in endpoints:
+            url = self.target.rstrip('/') + ep.path
+            
+            # 测试 SQL 注入
+            for payload in fuzz_payloads['sqli'][:2]:
+                result = self._test_sqli(url, ep, payload)
+                if result:
+                    fuzz_results.append(result)
+            
+            # 测试 XSS
+            for payload in fuzz_payloads['xss'][:1]:
+                result = self._test_xss(url, ep, payload)
+                if result:
+                    fuzz_results.append(result)
+            
+            # 测试路径遍历
+            for payload in fuzz_payloads['path_traversal'][:1]:
+                result = self._test_path_traversal(url, ep, payload)
+                if result:
+                    fuzz_results.append(result)
+        
+        # 对父路径进行 fuzzing
+        if parent_probe_result:
+            probed_api_count = 0
+            for path, info in parent_probe_result.items():
+                # 即使不是 JSON API，也进行 fuzzing（nginx fallback 也是安全问题）
+                if info.get('is_api') or info.get('status') == 200:
+                    probed_api_count += 1
+                    url = self.target.rstrip('/') + path
+                    
+                    # 尝试添加参数
+                    test_urls = [
+                        url + '?id=1',
+                        url + '?id=1 OR 1=1',
+                        url + '?q=<script>alert(1)</script>',
+                    ]
+                    
+                    for test_url in test_urls:
+                        result = self._test_url(test_url, path)
+                        if result:
+                            fuzz_results.append(result)
+            
+            if probed_api_count == 0:
+                print(f"  [WARN] 所有父路径返回 HTML (nginx fallback)，无法进行有效 fuzzing")
+                # 即使是 fallback，也添加一些测试 URL
+                for path, info in list(parent_probe_result.items())[:5]:
+                    url = self.target.rstrip('/') + path
+                    for payload in ['<script>alert(1)</script>', "' OR '1'='1"]:
+                        test_url = url + '?q=' + payload
+                        result = self._test_url(test_url, path)
+                        if result:
+                            fuzz_results.append(result)
+        
+        self.fuzz_results = fuzz_results
+        print(f"  [Fuzzer] 发现 {len(fuzz_results)} 个问题")
+        
+        return fuzz_results
+    
+    def _test_sqli(self, url: str, ep: ParsedEndpoint, payload: str) -> Optional[Dict]:
+        """测试 SQL 注入"""
+        try:
+            # 如果有 path 参数，替换它
+            test_url = url
+            for param in ep.get_path_params():
+                test_url = re.sub(r'\{' + param.name + r'\}', payload, test_url)
+                test_url = re.sub(r':' + param.name, payload, test_url)
+            
+            # 如果 URL 没有参数，添加到末尾
+            if '?' not in test_url:
+                test_url = test_url + '?id=' + payload
+            
+            r = self.session.get(test_url, timeout=5)
+            
+            sqli_indicators = [
+                'sql', 'syntax', 'mysql', 'oracle', 'error in your sql',
+                'postgresql', 'sqlite', 'mariadb', 'sqlstate', 'odbc'
+            ]
+            
+            resp_lower = r.text.lower()
+            for indicator in sqli_indicators:
+                if indicator in resp_lower:
+                    return {
+                        'type': 'SQL Injection',
+                        'severity': 'CRITICAL',
+                        'url': test_url,
+                        'payload': payload,
+                        'endpoint': ep.path,
+                        'evidence': f'SQL error indicator: {indicator}',
+                    }
+        
+        except Exception as e:
+            pass
+        
+        return None
+    
+    def _test_xss(self, url: str, ep: ParsedEndpoint, payload: str) -> Optional[Dict]:
+        """测试 XSS"""
+        try:
+            test_url = url
+            for param in ep.get_path_params():
+                test_url = re.sub(r'\{' + param.name + r'\}', payload, test_url)
+            
+            if '?' not in test_url:
+                test_url = test_url + '?q=' + payload
+            else:
+                test_url = test_url + '&q=' + payload
+            
+            r = self.session.get(test_url, timeout=5)
+            
+            if payload in r.text:
+                return {
+                    'type': 'XSS (Reflected)',
+                    'severity': 'HIGH',
+                    'url': test_url,
+                    'payload': payload,
+                    'endpoint': ep.path,
+                    'evidence': 'Payload reflected in response',
+                }
+        
+        except Exception as e:
+            pass
+        
+        return None
+    
+    def _test_path_traversal(self, url: str, ep: ParsedEndpoint, payload: str) -> Optional[Dict]:
+        """测试路径遍历"""
+        try:
+            test_url = url.rstrip('/') + '/' + payload
+            
+            r = self.session.get(test_url, timeout=5)
+            
+            if 'root:' in r.text or '[extensions]' in r.text or 'boot.ini' in r.text:
+                return {
+                    'type': 'Path Traversal',
+                    'severity': 'HIGH',
+                    'url': test_url,
+                    'payload': payload,
+                    'endpoint': ep.path,
+                    'evidence': 'Sensitive file content exposed',
+                }
+        
+        except Exception as e:
+            pass
+        
+        return None
+    
+    def _test_url(self, url: str, base_path: str) -> Optional[Dict]:
+        """测试 URL"""
+        try:
+            r = self.session.get(url, timeout=5)
+            
+            # 检查是否反射 payload
+            sqli_payloads = ["' OR '1'='1", "1 OR 1=1"]
+            xss_payloads = ["<script>alert(1)</script>", "<img src=x onerror=alert(1)>"]
+            
+            for payload in sqli_payloads:
+                if payload in r.text and 'sql' in r.text.lower():
+                    return {
+                        'type': 'SQL Injection',
+                        'severity': 'CRITICAL',
+                        'url': url,
+                        'payload': payload,
+                        'endpoint': base_path,
+                        'evidence': 'Potential SQL injection',
+                    }
+            
+            for payload in xss_payloads:
+                if payload in r.text:
+                    return {
+                        'type': 'XSS (Reflected)',
+                        'severity': 'HIGH',
+                        'url': url,
+                        'payload': payload,
+                        'endpoint': base_path,
+                        'evidence': 'Payload reflected',
+                    }
+        
+        except Exception as e:
+            pass
+        
+        return None
