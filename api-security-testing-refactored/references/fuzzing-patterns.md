@@ -1,108 +1,129 @@
-# API Fuzzing 端点字典
+# Fuzzing 字典
 
-## API 前缀
+## API前缀字典
 
-### 已发现的前缀模式
-```
-/api, /api/v1-v4, /api/admin, /api/authority, /api/system,
-/rest, /rest/api, /webapi,
-/auth, /oauth, /oauth2, /cas, /sso,
-/admin, /admin/api, /manager, /backend,
-/openapi, /open/api, /gateway, /proxy
-```
-
-### 前缀扩展规则
-
-当发现 `/api/admin/xxx` 时，可尝试：
-```
-/api/authority/xxx
-/api/system/xxx
-/api/common/xxx
-/api/v1/xxx, /api/v2/xxx, /api/v3/xxx
-```
-
-当发现 `/api/xxx` 时，可尝试：
-```
-/rest/api/xxx
-/webapi/xxx
-/auth/xxx
-/oauth/xxx
-```
-
-## API 端点
-
-### 通用 CRUD 端点
-```
-login, logout, register, list, add, delete, modify,
-getList, getListOfPage, detail, getInfo, profile,
-export, import, upload, download
-```
-
-### 用户管理端点
-```
-user, users, user/list, user/add, user/delete, user/modify,
-user/profile, user/restPassword, user/enable, user/disable,
-user/export, user/import, user/checkOnlyUser
-```
-
-### 角色权限端点
-```
-role, roles, role/list, role/add, role/delete, role/modify,
-menu, menus, menu/list, menu/add, menu/delete, menu/modify,
-permission, permissions, getUserPermission, getUserPermissionChild
-```
-
-### 订单/支付端点
-```
-order, orders, order/list, order/add, order/delete, order/modify,
-pay, payment, pay/add, pay/callback, pay/notify,
-refund, refunds, refund/list, refund/add
-```
-
-### 文件操作端点
-```
-file, files, upload, download, import, export,
-imgUpload, avatar, attachment
-```
-
-### RESTful 风格端点
-```
-/{resource}/{id}           → GET 获取详情
-/{resource}/{id}           → PUT 完整更新
-/{resource}/{id}           → DELETE 删除
-/{resource}/{id}           → PATCH 部分更新
-/{resource}/{id}/profile  → 获取关联信息
-/{resource}/{id}/stat      → 获取统计
-```
-
-## Fuzzing 策略
-
-### 矩阵测试
 ```python
-prefixes = ["/api", "/api/admin", "/api/authority", "/rest", "/auth"]
-endpoints = ["login", "logout", "list", "add", "delete", "user", "role", "menu"]
+common_api_prefixes = [
+    # 协议/网关
+    "/gateway", "/proxy", "/route", "/ingress",
+    "/api-gateway", "/openapi", "/open/api",
+    # 版本前缀
+    "/v1", "/v2", "/v3", "/v4", "/v5",
+    "/api/v1", "/api/v2", "/api/v3",
+    "/rest", "/rest/api", "/graphql",
+    # 管理后台
+    "/admin", "/admin/api", "/manager", "/backend",
+    "/backoffice", "/cms",
+    # 业务模块
+    "/user", "/users", "/member", "/members",
+    "/order", "/orders", "/trade", "/transaction",
+    "/product", "/goods", "/shop", "/store",
+    "/payment", "/pay", "/finance", "/account",
+    "/file", "/upload", "/oss", "/storage",
+    "/message", "/notify", "/sms", "/email",
+    "/admin", "/authority", "/system", "/config",
+    # 微服务
+    "/service", "/services", "/rpc", "/grpc",
+    "/auth", "/oauth", "/sso", "/cas",
+    # 移动端
+    "/mobile", "/app", "/ios", "/android",
+    "/miniapp", "/wechat", "/applet",
+]
+```
 
-for prefix in prefixes:
-    for endpoint in endpoints:
+## API端点字典
+
+```python
+common_api_endpoints = [
+    # 通用CRUD
+    "login", "logout", "register", "list", "add", "delete", "modify",
+    "getList", "getListOfPage", "detail", "getInfo", "profile",
+    # 用户相关
+    "user", "user/list", "user/add", "user/delete", "user/modify",
+    "user/profile", "user/restPassword", "user/enable", "user/disable",
+    # 角色权限
+    "role", "role/list", "role/add", "role/delete", "role/modify",
+    "menu", "menu/list", "menu/add", "menu/delete", "menu/modify",
+    # 文件操作
+    "file", "upload", "download", "import", "export",
+    "imgUpload", "avatar", "attachment",
+]
+```
+
+## Fuzzing测试流程
+
+```python
+for prefix in common_api_prefixes:
+    for endpoint in common_api_endpoints:
         url = target + prefix + "/" + endpoint
-        test(url)
+        response = requests.get(url)
+        # 记录返回200的接口
 ```
 
-### 根路径探测
-```
-/ipark                         → SPA前端
-/ipark/v2/api-docs             → Swagger文档(需认证)
-/ipark/doc.html                → Knife4j文档
-/sys/getLoginQrcode             → 二维码登录
-/sys/user/checkOnlyUser         → 用户查重
+## API根路径探测
+
+```python
+root_paths = [
+    "/", "/login", "/auth", "/oauth", "/sso", "/cas",
+    "/health", "/healthz", "/ready", "/status", "/info",
+    "/metrics", "/ping", "/actuator",
+]
+
+for path in root_paths:
+    url = api_base + path
+    response = requests.get(url)
+    if "json" in response.headers.get("Content-Type", ""):
+        # 发现可访问的接口
 ```
 
-## 常见响应码含义
+## 业务端点模板扩展
 
-| code | 含义 |
-|------|------|
-| 200 | 成功 |
-| 401 | 需要认证/token为空 |
-| 403 | 权限不足 |
-| 500 | 服务器错误 |
-| 90004 | 登录失效/未授权 |
+```
+发现的模式: /{module}/{operation}
+可能存在的端点:
+- /{module}/list          → 列表查询
+- /{module}/add          → 新增创建
+- /{module}/modify       → 修改更新
+- /{module}/delete       → 删除操作
+- /{module}/detail       → 详情查看
+- /{module}/getInfo      → 信息获取
+- /{module}/export       → 导出数据
+- /{module}/import       → 导入数据
+
+RESTful风格:
+- GET  /{resource}/{id}     → 获取详情
+- PUT  /{resource}/{id}     → 完整更新
+- DELETE /{resource}/{id}   → 删除资源
+- PATCH /{resource}/{id}   → 部分更新
+```
+
+## 非通用base_path字典
+
+```python
+extended_base_paths = [
+    # 协议/网关
+    "/gateway", "/proxy", "/route", "/ingress",
+    "/api-gateway", "/openapi", "/open/api",
+    # 版本前缀
+    "/v1", "/v2", "/v3", "/v4", "/v5",
+    "/api/v1", "/api/v2", "/api/v3",
+    "/rest", "/rest/api", "/graphql",
+    # 管理后台
+    "/admin", "/manager", "/manage", "/console",
+    "/backend", "/backoffice", "/cms",
+    # 业务模块
+    "/user", "/users", "/member", "/members",
+    "/order", "/orders", "/trade", "/transaction",
+    "/product", "/goods", "/shop", "/store",
+    "/payment", "/pay", "/finance", "/account",
+    "/file", "/upload", "/oss", "/storage",
+    "/message", "/notify", "/sms", "/email",
+    "/admin", "/authority", "/system", "/config",
+    # 微服务
+    "/service", "/services", "/rpc", "/grpc",
+    "/auth", "/oauth", "/sso", "/cas",
+    # 移动端
+    "/mobile", "/app", "/ios", "/android",
+    "/miniapp", "/wechat", "/applet",
+]
+```

