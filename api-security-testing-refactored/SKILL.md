@@ -91,8 +91,7 @@ flowchart TD
 │   5. IDOR越权 - idor_tester.py / 04-idor-tests.md                    │
 │   6. 敏感信息 - sensitive_finder.py / 05-sensitive-data-tests.md      │
 │   7. 业务逻辑 - 06-biz-logic-tests.md                                 │
-│   8. CORS/CSRF - 07-security-config-tests.md                           │
-│   9. 暴力破解 - 08-brute-force-tests.md                                │
+│   8. 暴力破解 - 08-brute-force-tests.md                                │
 │ 输出:                                                                  │
 │   - 漏洞清单 + 验证证据                                                │
 │   - 漏洞类型分类                                                       │
@@ -503,6 +502,77 @@ email         → 可用于钓鱼
 3. 收集有效账号尝试其他系统
 ```
 
+### 利用链推理提示词模板
+
+当发现多个漏洞时，按以下模板进行利用链分析：
+
+#### 模板1：认证类漏洞利用链
+
+```
+发现的漏洞：
+- 登录接口无验证码
+- 暴力破解可获取有效账号
+
+利用链推理：
+1. 使用暴力破解获取有效账号 → 记录账号密码
+2. 使用有效账号登录 → 获取 JWT Token
+3. 使用 Token 访问敏感接口 → 测试越权操作
+4. 越权访问获取更多数据 → 扩大攻击面
+
+验证步骤：
+- 使用获取的 Token 请求 /api/admin/user/list
+- 如果返回用户数据，说明 Token 有效且可利用
+```
+
+#### 模板2：用户枚举 + IDOR 利用链
+
+```
+发现的漏洞：
+- 用户存在/不存在响应不同（用户枚举）
+- 查询接口存在 IDOR
+
+利用链推理：
+1. 用户枚举获取 userId 列表
+2. 使用 userId 遍历查询接口
+3. 如果能查到他人数据，说明存在 IDOR
+
+验证步骤：
+- 使用不同 userId 请求 /api/user/profile?userId=X
+- 对比返回数据是否属于不同用户
+```
+
+#### 模板3：敏感信息泄露 + 认证绕过
+
+```
+发现的漏洞：
+- 某接口返回敏感信息（如 password）
+- 另一接口存在认证绕过
+
+利用链推理：
+1. 认证绕过获取初始访问
+2. 利用敏感信息泄露获取更多凭证
+3. 组合利用扩大攻击面
+
+验证步骤：
+- 绕过认证访问 /api/info 获取数据
+- 检查响应中是否包含可利用的凭证
+```
+
+#### 通用利用链验证格式
+
+```
+漏洞利用链：
+1. [漏洞A] → [漏洞B] → [漏洞C]
+   - 漏洞A: 具体描述
+   - 漏洞B: 基于A的结果能做什么
+   - 漏洞C: 最终能获取什么
+
+2. 验证记录：
+   - Step 1: 执行的操作
+   - Step 2: 返回的结果
+   - Step 3: 是否成功利用
+```
+
 ## SPA应用完整采集流程
 
 ### 阶段1：基础探测
@@ -753,6 +823,134 @@ core/                              # 核心能力池（原子化）
 | **辅助** | | | |
 | | `base_path_dict.py` | 找不到baseURL时，fuzzing父路径 | ✅ |
 | | `prerequisite.py` | 依赖检查，工具可用性验证 | ✅ |
+| **编排【自动化】** | | | |
+| | `orchestrator.py` | 智能编排器，集成所有组件自动执行 | 推荐 |
+
+## 自动化编排执行
+
+### 使用编排器进行自动化测试
+
+当需要全面自动化测试时，可直接调用 `orchestrator.py`：
+
+```python
+# 导入编排器
+import sys
+sys.path.insert(0, '/workspace/api-security-testing-refactored')
+
+from core.orchestrator import EnhancedAgenticOrchestrator, run_enhanced_agentic_test
+
+# 方式1: 使用高级函数（推荐）
+result = run_enhanced_agentic_test(
+    target='https://target.com',
+    max_iterations=100,
+    max_duration=3600.0
+)
+
+# 方式2: 直接使用编排器
+orchestrator = EnhancedAgenticOrchestrator('https://target.com')
+result = orchestrator.execute(
+    max_iterations=100,
+    max_duration=3600.0,
+    enable_fuzzing=True,
+    enable_testing=True
+)
+
+# 输出报告
+print(result)
+```
+
+### 编排器集成组件
+
+```
+orchestrator.py 集成以下核心组件：
+
+┌─────────────────────────────────────────────────────────────┐
+│  EnhancedAgenticOrchestrator                               │
+├─────────────────────────────────────────────────────────────┤
+│  ├── Reasoner (推理引擎)                                   │
+│  │   └── 多层级推理、洞察生成、阻碍因素识别                 │
+│  ├── ContextManager (上下文管理器)                          │
+│  │   └── 技术栈、网络、安全上下文维护                      │
+│  ├── StrategyPool (策略池)                                  │
+│  │   └── 测试策略选择、动态调整                            │
+│  └── TestingLoop (测试循环)                                 │
+│      └── 洞察驱动测试、持续迭代                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 编排器执行阶段
+
+```
+阶段1: 侦察 (Reconnaissance)
+  - HTTP探测目标可访问性
+  - 技术栈识别
+  - Swagger/API文档发现
+
+阶段2: 上下文分析 (Context Analysis)
+  - 分析观察结果
+  - 更新技术栈上下文
+  - 识别SPA模式和API指标
+
+阶段3: API发现 (Discovery)
+  - V35JSAnalyzer JS文件分析
+  - Swagger文档解析
+  - 智能猜测常见API路径
+
+阶段4: 推理分析 (Reasoning)
+  - 生成洞察
+  - 选择测试策略
+  - 创建测试计划
+
+阶段5: 智能Fuzzing (可选)
+  - 高价值端点模糊测试
+  - 响应分析
+
+阶段6: 漏洞测试 (Testing)
+  - 洞察驱动测试循环
+  - 漏洞发现和验证
+```
+
+### 编排器返回结果
+
+```python
+{
+    'target': 'https://target.com',
+    'duration': 123.45,  # 执行时长(秒)
+    'early_termination': None,  # 或 'blocked'/'rate_limited'
+    'components': {
+        'reasoner': {
+            'total_insights': 50,
+            'active_insights': 15
+        },
+        'context_manager': {
+            'tech_stack': {...},
+            'endpoints_discovered': 30
+        },
+        'strategy_pool': {
+            'strategies': 5,
+            'selected': 'aggressive'
+        }
+    },
+    'stage_results': {
+        'reconnaissance': {...},
+        'context_analysis': {...},
+        'discovery': {...},
+        'reasoning': {...},
+        'fuzzing': {...},
+        'testing': {...}
+    },
+    'insights': [...],  # 所有洞察
+    'blockers': [...],  # 阻碍因素
+    'opportunities': [...]  # 机会点
+}
+```
+
+### 手动模式 vs 编排器模式
+
+| 模式 | 适用场景 | 优点 |
+|------|----------|------|
+| **手动模式** | 精细测试、需要Agent判断 | 灵活、可控 |
+| **编排器模式** | 全面扫描、自动化测试 | 高效、可重复 |
 
 ## 参考资源
 
@@ -761,13 +959,18 @@ core/                              # 核心能力池（原子化）
 | 文档 | 内容 | 使用时机 |
 |------|------|----------|
 | `workflows.md` | 完整扫描流程 | 整体流程参考 |
+| `rest-guidance.md` | REST API 测试指导 | 测试 REST API 时 |
+| `graphql-guidance.md` | GraphQL 测试指导 | 测试 GraphQL API 时 |
+| `asset-discovery.md` | 资产发现方法论 | 阶段1 资产收集 |
+| `test-matrix.md` | 测试矩阵 | 选择测试方法 |
+| `validation.md` | 漏洞验证标准 | 阶段5 漏洞验证 |
+| `severity-model.md` | 严重性分级模型 | CVSS 评分定级 |
 | `vulnerabilities/01-sqli-tests.md` | SQL注入测试方法 | 测试SQL注入时 |
 | `vulnerabilities/02-user-enum-tests.md` | 用户枚举测试方法 | 测试用户枚举时 |
 | `vulnerabilities/03-jwt-tests.md` | JWT认证测试方法 | 测试JWT时 |
 | `vulnerabilities/04-idor-tests.md` | IDOR越权测试 | 测试越权时 |
 | `vulnerabilities/05-sensitive-data-tests.md` | 敏感信息泄露测试 | 测试信息泄露时 |
 | `vulnerabilities/06-biz-logic-tests.md` | 业务逻辑漏洞测试 | 测试业务逻辑时 |
-| `vulnerabilities/07-security-config-tests.md` | 安全配置测试(CORS/CSRF) | 测试配置漏洞时 |
 | `vulnerabilities/08-brute-force-tests.md` | 暴力破解测试 | 测试认证爆破时 |
 | `vulnerabilities/09-vulnerability-chains.md` | 漏洞关联联想 | 阶段5 利用链构造 |
 | `vulnerabilities/10-auth-tests.md` | 认证测试扩展 | 测试认证时 |
@@ -793,6 +996,7 @@ core/                              # 核心能力池（原子化）
 | `vulnerability-cases.md` | 漏洞案例 |
 | `usage-examples.md` | 使用示例 |
 | `environment-simulation.md` | 环境模拟 |
+| `v55_perfect_report.md` | 完美报告模板 (v5.5) |
 
 ### resources/ 资源文件
 
