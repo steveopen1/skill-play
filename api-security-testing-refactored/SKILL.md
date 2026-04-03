@@ -320,10 +320,39 @@ email         → 可用于钓鱼
 | 响应类型 | 特征 | 含义 |
 |----------|------|------|
 | JSON对象 | `{"code":200,"data":{...}}` | 真实API响应 |
-| JSON数组 | `[{"id":1,...},...]` | 真实数据列表 |
+| JSON数组 | `[{..."id":1,...}]` | 真实数据列表 |
 | HTML页面 | `<!DOCTYPE html>...` | SPA路由/WAF/错误页 |
 | 空响应 | 长度<50字节 | 可能是错误/空数据 |
 | 重定向 | HTTP 301/302 | 需要认证/跳转 |
+
+### 响应类型处理流程
+
+```
+发现HTML响应时：
+1. 添加标准Header重试：
+   - APP-ID
+   - TRANSACTION-ID
+   - REQ-TIME
+   - Content-Type
+   
+2. 尝试不同的Content-Type：
+   - application/json
+   - application/x-www-form-urlencoded
+   
+3. 尝试GET/POST不同方法
+
+4. 多次测试确认是WAF还是需要认证
+```
+
+### 发现JSON响应后的分析
+
+```
+发现敏感信息立即利用：
+1. 发现 communityId → 利用ID测试越权/注入
+2. 发现内网地址 → 测试SSRF
+3. 发现 URL → 测试关联系统
+4. 发现 token → 测试其他接口
+```
 
 ## 漏洞验证闭环
 
@@ -405,6 +434,73 @@ email         → 可用于钓鱼
 3. token能用于其他用户吗？ → 改userId重放
 
 最终：token泄露 → 用token访问敏感接口 → 越权操作
+```
+
+### 发现Header/参数后的推理
+
+```
+你发现的：标准Header包含 APP-ID、TRANSACTION-ID
+
+利用链：
+1. Header有效吗？ → 用Header构造请求获取JSON响应
+2. Header组合正确吗？ → 测试缺少某个Header
+3. Header值可控吗？ → 测试注入点
+
+验证步骤：
+1. 保留所有Header，直接访问接口
+2. 逐个移除Header测试哪个是必需的
+3. 收集Header值用于后续请求
+```
+
+### 发现敏感ID后的推理
+
+```
+你发现的：communityId、companyId、userId等
+
+利用链：
+1. ID有效吗？ → 用ID查询相关接口
+2. ID可遍历吗？ → 测试IDOR漏洞
+3. ID可注入吗？ → 测试SQL/NoSQL注入
+
+验证步骤：
+1. GET /app/xxx.list?communityId=XXX
+2. GET /app/xxx.list?communityId=其他人的ID
+3. POST /app/xxx/add communityId注入测试
+```
+
+### 发现多系统URL后的推理
+
+```
+你发现的：多个内部系统URL（主系统、物业系统、业主系统、OSS等）
+
+利用链：
+1. 系统间关联？ → 是否共享Session/Token？
+2. OSS权限？ → 测试读取/写入权限
+3. 内网地址？ → SSRF测试
+
+验证步骤：
+1. 访问发现的URL测试可访问性
+2. 测试系统间Session共享
+3. OSS测试上传/读取/列目录
+```
+
+### 发现登录接口后的推理
+
+```
+你发现的：POST /callComponent/login/doLogin
+
+利用链：
+1. 用户存在性？ → 错误消息差异判断
+2. 密码可爆破吗？ → 锁定机制绕过
+3. 无效密码后锁ID可绕过？ → 换账号继续
+
+验证步骤：
+1. 测试响应差异：
+   - "用户或密码错误" → 用户存在（可疑）
+   - "用户不存在" → 用户不存在
+   - "登陆错误次数过多" → 账号已锁定
+2. 账号锁定后换账号继续爆破
+3. 收集有效账号尝试其他系统
 ```
 
 ## SPA应用完整采集流程
