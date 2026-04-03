@@ -14,7 +14,8 @@ const state = {
   failureCount: 0,
   lastDiscovery: null,
   hookEnabled: false,
-  pressureLevel: 0
+  pressureLevel: 0,
+  autoActivate: true  // 新增：自动激活模式
 };
 
 // 压力等级阈值
@@ -72,6 +73,7 @@ export const CyberSupervisorPlugin = async ({ client, directory }) => {
   return {
     /**
      * 会话创建时初始化
+     * 注意：autoActivate 模式下会自动开启监督
      */
     "session.created": async ({ event }) => {
       state.progress = 0;
@@ -79,13 +81,19 @@ export const CyberSupervisorPlugin = async ({ client, directory }) => {
       state.lastDiscovery = null;
       state.pressureLevel = 0;
       
+      // 如果是自动激活模式，默认开启监督
+      if (state.autoActivate) {
+        state.hookEnabled = true;
+      }
+      
       await client.app.log({
         body: {
           service: "cyber-supervisor",
           level: "info",
-          message: "赛博监工已初始化",
+          message: state.autoActivate ? "赛博监工已自动激活" : "赛博监工已初始化",
           progress: state.progress,
-          hookEnabled: state.hookEnabled
+          hookEnabled: state.hookEnabled,
+          autoActivate: state.autoActivate
         }
       });
     },
@@ -198,10 +206,12 @@ export const CyberSupervisorPlugin = async ({ client, directory }) => {
           switch (args.action) {
             case "on":
               state.hookEnabled = true;
-              return "▎[赛博监工] 已开启，自动监督测试进度";
+              state.autoActivate = true;
+              return "▎[赛博监工] 已开启（自动激活模式），自动监督测试进度";
             
             case "off":
               state.hookEnabled = false;
+              state.autoActivate = false;
               return "▎[赛博监工] 已关闭";
             
             case "status":
@@ -209,7 +219,8 @@ export const CyberSupervisorPlugin = async ({ client, directory }) => {
 进度: ${state.progress}%
 失败次数: ${state.failureCount}
 压力等级: L${state.pressureLevel || 0}
-监控: ${state.hookEnabled ? "开启" : "关闭"}`;
+监控: ${state.hookEnabled ? "开启" : "关闭"}
+自动激活: ${state.autoActivate ? "是" : "否"}`;
             
             case "reset":
               state.progress = 0;
