@@ -1,6 +1,6 @@
 {
   "name": "opencode-api-security-testing",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "API Security Testing Plugin for OpenCode - Automated vulnerability scanning and penetration testing",
   "type": "module",
   "main": "dist/index.js",
