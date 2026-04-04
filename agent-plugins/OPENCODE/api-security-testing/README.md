@@ -1,45 +1,26 @@
 # API Security Testing Plugin
 
-OpenCode 插件，用于自动化 API 安全测试。
+API 安全测试插件，为 OpenCode 提供自动化漏洞扫描和渗透测试能力。
 
-## 问题排查
-
-如果您遇到 OpenCode 无法连接的问题，请先确保已从 `opencode.json` 中移除插件配置，然后按以下步骤安装。
-
-## 安装步骤
-
-### 步骤 1：复制 Agents
+## 安装
 
 ```bash
-# 创建全局 agents 目录（如果不存在）
-mkdir -p ~/.config/opencode/agents
-
-# 复制 agents 到全局配置目录
-cp -r agents/* ~/.config/opencode/agents/
+npm install opencode-api-security-testing
 ```
 
-### 步骤 2：复制 Commands（可选）
+## 配置
 
-```bash
-# 创建全局 commands 目录（如果不存在）
-mkdir -p ~/.config/opencode/commands
+在 `opencode.json` 中添加：
 
-# 复制 commands
-cp -r commands/* ~/.config/opencode/commands/
-```
-
-### 步骤 3：复制 References（供参考）
-
-```bash
-# 复制漏洞测试参考文档
-cp -r references ~/.config/opencode/
+```json
+{
+  "plugin": ["opencode-api-security-testing"]
+}
 ```
 
 ## 使用方法
 
 ### 使用 Agents
-
-在 OpenCode 中使用 `@` 提及 agents：
 
 ```
 @cyber-supervisor 对 https://example.com 进行 API 安全测试
@@ -51,16 +32,6 @@ cp -r references ~/.config/opencode/
 
 ```
 @resource-specialist 发现所有 API 端点
-```
-
-### 使用 Commands
-
-```
-/api-security-testing-scan https://example.com/api
-```
-
-```
-/api-security-testing-test https://example.com/api/login sqli
 ```
 
 ## Agents
@@ -76,7 +47,7 @@ cp -r references ~/.config/opencode/
 
 ## 漏洞测试参考
 
-参考文档位于 `references/vulnerabilities/` 目录：
+详细测试指南位于 `references/vulnerabilities/` 目录：
 
 | 文件 | 漏洞类型 |
 |------|---------|
