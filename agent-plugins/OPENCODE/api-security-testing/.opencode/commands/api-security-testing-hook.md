@@ -1,22 +1,18 @@
 ---
-description: 赛博监工控制 - 开启/关闭自动监督
+description: 赛博监工控制 - 自动监督 API 测试进度
 agent: build
 ---
 
-赛博监工 (Cyber Supervisor) 控制命令。
+赛博监工 (Cyber Supervisor) 是自动监督 API 安全测试进度的机制。
 
 ## 功能
-- **on** - 开启赛博监工：启动自动循环测试监督
-- **off** - 关闭赛博监工：停止自动监督
-- **status** - 查看当前监工状态
-- **reset** - 重置监工状态
 
-## 监工触发条件
-- tool.execute.after: 检测失败次数
-- session.idle: 检查测试进度
-- 发现新漏洞时自动深度测试
+- **自动监测** - 监控测试进度、检测失败次数
+- **压力升级** - 失败时自动升级 (L1→L4)
+- **进度警告** - 进度过低时提醒
 
 ## 压力等级
+
 | 等级 | 失败次数 | 动作 |
 |------|----------|------|
 | L1 | 2次 | 切换方法 |
@@ -24,9 +20,6 @@ agent: build
 | L3 | 5次 | 7点检查清单 |
 | L4 | 7次+ | 绝望模式 |
 
-## 使用方式
-```
-/api-security-testing hook on
-/api-security-testing hook off
-/api-security-testing hook status
-```
+## 注意
+
+赛博监工默认自动激活，当执行 API 安全测试时会自动启动监督。

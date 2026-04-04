@@ -3,23 +3,35 @@ description: API Security Testing - API 安全测试主入口
 agent: build
 ---
 
-## APSEC API 安全测试
+## API Security Testing - API 安全测试
 
-@.opencode/skills/api-security-testing/SKILL.md
+执行 API 安全测试、漏洞扫描、渗透测试。
 
-### 执行命令
+### 可用命令
 
-```
-/api-security-testing scan https://target.com
-/api-security-testing test https://target.com/api/endpoint
-```
+- `/api-security-testing-scan` - 完整扫描模式
+- `/api-security-testing-test` - 针对特定端点快速测试
+- `/api-security-testing-status` - 查看测试状态
 
-### 加载漏洞测试模板
+### 核心能力
 
-执行漏洞检测时，使用以下模板：
+1. **Playwright JS 动态采集** - 无头浏览器执行，XHR/Fetch 拦截
+2. **API 端点发现** - JS 解析、URL 模式提取
+3. **漏洞检测** - SQLi、XSS、IDOR、敏感数据、安全头部
+4. **赛博监工** - 自动监测进度，失败时压力升级
 
-@references/vulnerabilities/README.md
+### 触发词
 
-@references/rest-guidance.md
+当用户提到以下关键词时自动激活：
+- "API 安全测试"
+- "漏洞扫描"
+- "渗透测试"
+- "检测 API 漏洞"
 
-@references/severity-model.md
+### 报告输出
+
+生成 Markdown 格式测试报告，包含端点列表、漏洞详情、利用链、修复建议。
+
+### 注意
+
+仅用于合法授权的安全测试，测试前确保有书面授权。
