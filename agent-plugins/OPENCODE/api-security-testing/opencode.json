@@ -10,12 +10,8 @@
       "description": "API安全测试的赛博监工",
       "mode": "subagent"
     },
-    "endpoint-specialist": {
-      "description": "API端点探测专家",
-      "mode": "subagent"
-    },
-    "vulnerability-miner": {
-      "description": "漏洞挖掘专家",
+    "probing-miner": {
+      "description": "探测挖掘专家（端点探测+漏洞挖掘）",
       "mode": "subagent"
     },
     "resource-specialist": {
