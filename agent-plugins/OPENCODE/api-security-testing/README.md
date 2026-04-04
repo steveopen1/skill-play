@@ -2,51 +2,44 @@
 
 OpenCode 插件，用于自动化 API 安全测试。
 
-## 安装
+## 问题排查
 
-### 方式一：Git Clone（推荐）
+如果您遇到 OpenCode 无法连接的问题，请先确保已从 `opencode.json` 中移除插件配置，然后按以下步骤安装。
 
-```bash
-# 克隆到 OpenCode 插件目录
-git clone https://github.com/steveopen1/skill-play.git ~/.config/opencode/plugins/api-security-testing
-```
+## 安装步骤
 
-### 方式二：手动复制
-
-1. 克隆仓库
-2. 复制 `agent-plugins/OPENCODE/api-security-testing/` 到 `~/.config/opencode/plugins/`
-
-## 配置
-
-### 1. 添加插件到 opencode.json
-
-在 `~/.config/opencode/opencode.json` 中添加：
-
-```json
-{
-  "plugin": ["api-security-testing"]
-}
-```
-
-### 2. 复制 Agents（如果 config 钩子不生效）
-
-如果 `@cyber-supervisor` 等命令无响应，需要手动复制 agents：
+### 步骤 1：复制 Agents
 
 ```bash
-# 复制 agents 到 OpenCode 全局配置目录
+# 创建全局 agents 目录（如果不存在）
+mkdir -p ~/.config/opencode/agents
+
+# 复制 agents 到全局配置目录
 cp -r agents/* ~/.config/opencode/agents/
 ```
 
-### 3. 复制 Commands（可选）
+### 步骤 2：复制 Commands（可选）
 
 ```bash
-# 复制 commands 到 OpenCode 全局配置目录
+# 创建全局 commands 目录（如果不存在）
+mkdir -p ~/.config/opencode/commands
+
+# 复制 commands
 cp -r commands/* ~/.config/opencode/commands/
+```
+
+### 步骤 3：复制 References（供参考）
+
+```bash
+# 复制漏洞测试参考文档
+cp -r references ~/.config/opencode/
 ```
 
 ## 使用方法
 
 ### 使用 Agents
+
+在 OpenCode 中使用 `@` 提及 agents：
 
 ```
 @cyber-supervisor 对 https://example.com 进行 API 安全测试
