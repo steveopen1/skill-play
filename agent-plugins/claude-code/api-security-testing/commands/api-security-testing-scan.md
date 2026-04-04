@@ -1,5 +1,5 @@
 ---
-description: "APSEC 完整扫描模式。/api-security-testing:scan [目标URL]。Triggers on: '/api-security-testing:scan', '/api-security-testing scan', 'api-security-testing scan', '完整扫描', '全流程测试'."
+description: "APSEC 完整扫描模式。Triggers on: '/api-security-testing:scan', '/api-security-testing scan', '完整扫描', '全流程测试'."
 argument-hint: "[目标URL]"
 ---
 
@@ -37,3 +37,9 @@ argument-hint: "[目标URL]"
 /api-security-testing:scan https://target.com
 /api-security-testing scan https://target.com
 ```
+
+### 目标
+
+目标 URL: `$ARGUMENTS`
+
+执行测试并生成安全报告。

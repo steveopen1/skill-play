@@ -18,5 +18,15 @@
     "playwright",
     "sqli",
     "xss"
-  ]
+  ],
+  "commands": [
+    "./commands/api-security-testing.md",
+    "./commands/api-security-testing-scan.md",
+    "./commands/api-security-testing-hook.md",
+    "./commands/api-security-testing-status.md",
+    "./commands/api-security-testing-off.md"
+  ],
+  "agents": "./agents/",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
 }
