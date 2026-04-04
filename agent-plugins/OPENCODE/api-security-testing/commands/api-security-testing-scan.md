@@ -1,37 +1,59 @@
 ---
-description: API Security Testing - 完整扫描模式
-agent: build
+description: API 安全测试 - 启动安全扫描任务
 ---
 
-执行完整的 API 安全测试扫描流程。
+<command-instruction>
+启动 API 安全测试扫描任务。
 
-## 测试流程
-
-1. Playwright 无头浏览器执行 JavaScript，采集动态 API 端点
-2. XHR/Fetch 请求拦截，发现 API 路径
-3. 漏洞检测：SQL注入、XSS、IDOR、敏感数据暴露、安全头部
-4. 验证与报告：利用链构造、Markdown 格式报告
-
-## 漏洞测试参考
-
-使用 `@` 语法引用漏洞测试指南：
+## 使用方法
 
 ```
-@agent-plugins/OPENCODE/api-security-testing/references/vulnerabilities/README.md
-@agent-plugins/OPENCODE/api-security-testing/references/workflows.md
-@agent-plugins/OPENCODE/api-security-testing/references/test-matrix.md
+/api-security-testing-scan <目标URL>
 ```
 
-## 输出要求
+## 示例
 
-生成 Markdown 格式安全测试报告，包含：
+```
+/api-security-testing-scan https://example.com/api
+```
+
+## 工作流程
+
+1. **Phase 1**: 端点发现 - 采集所有 API 端点
+2. **Phase 2**: 漏洞挖掘 - 针对每个端点测试漏洞
+3. **Phase 3**: 报告生成 - 输出安全报告
+
+## 可用 Agent
+
+| Agent | 说明 |
+|-------|------|
+| @cyber-supervisor | 赛博监工 - 监督整个测试流程 |
+| @probing-miner | 探测挖掘专家 - 漏洞挖掘 |
+| @resource-specialist | 资源探测专家 - 端点发现 |
+
+## 漏洞类型
+
+- SQL 注入 (SQLi)
+- 用户枚举
+- JWT 安全
+- IDOR 越权
+- 敏感数据泄露
+- 业务逻辑漏洞
+- 安全配置错误
+- 暴力破解
+- GraphQL 安全
+- SSRF
+
+## 报告格式
+
+生成 Markdown 格式的安全报告，包含：
 - 测试目标信息
 - 发现的端点列表
 - 漏洞详情（严重程度、位置、验证步骤）
 - 利用链说明
 - 修复建议
 
-## 重要
+## 注意
 
-- 仅用于合法授权的安全测试
-- 必须确认用户拥有测试目标的合法授权
+仅用于合法授权的安全测试，测试前确保有书面授权。
+</command-instruction>

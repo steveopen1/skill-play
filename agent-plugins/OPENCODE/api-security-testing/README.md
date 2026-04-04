@@ -1,99 +1,55 @@
-# API Security Testing - OpenCode 插件
+# API Security Testing Plugin
 
-全自动 API 安全测试插件，专为 OpenCode 设计。
+OpenCode 插件，用于自动化 API 安全测试。
 
-## 安装方式
+## 安装
 
-### 方式一：复制到项目 .opencode 目录
-```bash
-# 将插件内容复制到 .opencode/ 目录
-cp -r api-security-testing/* <your-project>/.opencode/
-```
-
-### 方式二：复制到全局配置
-```bash
-cp -r api-security-testing/* ~/.config/opencode/
-```
+插件已安装在 `~/.config/opencode/plugins/api-security-testing/`
 
 ## 使用方法
 
-### 使用 Agent
-```
-@cyber-supervisor 对 https://target.com 进行完整 API 安全测试
-```
-
-### 使用 Skill
-```
-skills_api_security_testing https://target.com
-```
-
-### 使用 Python 测试引擎
-```bash
-cd skills/api-security-testing/tools
-python3 core/deep_api_tester_v55.py https://target.com output.md
-```
-
-## 目录结构
-
-插件目录结构符合 OpenCode 规范：
+### 委派 Agent 进行 API 安全测试
 
 ```
-api-security-testing/
-├── skills/                       # Skills
-│   └── api-security-testing/     # Skill 名称
-│       ├── SKILL.md             # Skill 定义
-│       ├── references/          # 漏洞测试参考文档
-│       │   └── vulnerabilities/  # 12 种漏洞测试指南
-│       ├── tools/               # Python 测试引擎
-│       │   └── core/           # 核心模块
-│       ├── scripts/            # 辅助脚本
-│       └── assets/             # 资源文件
-│           ├── examples/        # 使用示例
-│           ├── templates/       # 报告模板
-│           └── resources/       # Payload 资源
-├── agents/                       # Agents
-│   ├── cyber-supervisor.md     # 赛博监工
-│   ├── probing-miner.md        # 探测挖掘专家
-│   └── resource-specialist.md   # 资源探测专家
-├── plugins/                      # Plugins
-│   └── cyber-supervisor.js      # 赛博监工插件
-├── commands/                     # Commands
-│   └── *.md
-└── opencode.json               # 配置
+delegate_task @cyber-supervisor
 ```
 
-安装后 `.opencode/` 目录结构：
-
 ```
-.opencode/
-├── skills/
-│   └── api-security-testing/
-├── agents/
-├── plugins/
-├── commands/
-└── opencode.json
+delegate_task @probing-miner
 ```
 
-## 功能特性
+```
+delegate_task @resource-specialist
+```
 
-- **Playwright JS 动态采集** - 无头浏览器执行 JavaScript
-- **API 端点智能发现** - JS 解析 + 流量拦截
-- **漏洞检测** - SQLi/XSS/IDOR/敏感数据/安全头部
-- **赛博监工** - 自动监测进度、失败升级
-- **Markdown 报告生成** - 自动生成测试报告
-- **Python 测试引擎** - tools/core/ 提供完整测试能力
+## Agent 说明
 
-## 漏洞测试覆盖
+### cyber-supervisor
+API安全测试的赛博监工。永不停止任何线索，自动循环执行，遇到失败自动委派 probing-miner 和 resource-specialist 进行探测。
 
-| 类别 | 说明 |
-|------|------|
-| SQL 注入 | 布尔盲注、时间盲注、报错注入 |
-| XSS | 反射型、存储型、DOM 型 |
-| IDOR | 水平越权、垂直越权 |
-| JWT | Token 伪造、算法绕过 |
-| 敏感数据 | 密码、密钥、个人信息 |
-| 安全配置 | CORS、HSTS、头部 |
+### probing-miner
+探测挖掘专家。使用专业测试技术，引用漏洞测试指南进行针对性漏洞挖掘和验证。
 
-## License
+### resource-specialist
+资源探测专家。专注于采集和发现 API 端点，使用动态和静态分析技术提取所有可能的攻击面。
 
-MIT
+## 漏洞测试参考
+
+参考文档位于 `references/vulnerabilities/` 目录：
+
+- 01-sqli-tests.md - SQL 注入测试
+- 02-user-enum-tests.md - 用户枚举测试
+- 03-jwt-tests.md - JWT 认证测试
+- 04-idor-tests.md - IDOR 越权测试
+- 05-sensitive-data-tests.md - 敏感数据泄露
+- 06-biz-logic-tests.md - 业务逻辑漏洞
+- 07-security-config-tests.md - 安全配置漏洞
+- 08-brute-force-tests.md - 暴力破解测试
+- 09-vulnerability-chains.md - 漏洞关联联想
+- 10-auth-tests.md - 认证漏洞测试
+- 11-graphql-tests.md - GraphQL 安全测试
+- 12-ssrf-tests.md - SSRF 安全测试
+
+## 重要
+
+仅用于合法授权的安全测试，测试前确保有书面授权。

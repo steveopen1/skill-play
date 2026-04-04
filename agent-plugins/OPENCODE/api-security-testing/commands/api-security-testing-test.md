@@ -1,26 +1,49 @@
 ---
-description: API Security Testing - 快速测试模式
-agent: build
+description: API 安全测试 - 快速测试特定端点
 ---
 
-针对特定 API 端点进行深度安全测试。
+<command-instruction>
+对特定 API 端点进行快速安全测试。
 
-## 测试范围
+## 使用方法
 
-- SQL 注入 (SQLi)
-- XSS 跨站脚本
-- IDOR 水平越权
-- 敏感数据暴露
-- 认证绕过
+```
+/api-security-testing-test <端点URL> [测试类型]
+```
 
-## 执行步骤
+## 示例
 
-1. 识别端点参数
-2. 构建测试 payload
-3. 执行测试用例
-4. 验证漏洞存在
-5. 生成测试报告
+```
+/api-security-testing-test https://example.com/api/login sqli
+/api-security-testing-test https://example.com/api/user idor
+```
 
-## 漏洞测试参考
+## 测试类型
 
-参考 @references/vulnerabilities/01-sqli-tests.md、04-idor-tests.md、05-sensitive-data-tests.md、validation.md 进行测试。
+| 类型 | 说明 |
+|------|------|
+| sqli | SQL 注入测试 |
+| idor | IDOR 越权测试 |
+| jwt | JWT 安全测试 |
+| auth | 认证漏洞测试 |
+| xss | XSS 测试 |
+| ssrf | SSRF 测试 |
+| all | 全部测试 |
+
+## 输出格式
+
+### 发现漏洞
+
+| 漏洞类型 | 端点 | 严重程度 | 验证状态 | PoC |
+|---------|------|---------|---------|-----|
+| SQL注入 | /api/user?id=1 | HIGH | 已验证 | payload... |
+
+### 详细分析
+
+对每个漏洞提供：
+1. **描述**: 漏洞的详细说明
+2. **位置**: 具体的端点和参数
+3. **验证步骤**: 如何验证漏洞存在
+4. **PoC**: 具体的测试payload
+5. **修复建议**: 如何修复该漏洞
+</command-instruction>
