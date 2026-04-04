@@ -111,20 +111,20 @@ await Task.launch("probing-miner", {
 当发现特定类型漏洞时，引用对应指南：
 
 ```
-@agent-plugins/OPENCODE/api-security-testing/references/vulnerabilities/README.md
+@skills/api-security-testing/references/vulnerabilities/README.md
 ```
 
 ### 漏洞类型 → 引用文件
 
 | 漏洞类型 | 引用文件 |
 |---------|---------|
-| SQL 注入 | `references/vulnerabilities/01-sqli-tests.md` |
-| IDOR | `references/vulnerabilities/04-idor-tests.md` |
-| JWT 漏洞 | `references/vulnerabilities/03-jwt-tests.md` |
-| 敏感数据 | `references/vulnerabilities/05-sensitive-data-tests.md` |
-| 认证漏洞 | `references/vulnerabilities/10-auth-tests.md` |
-| GraphQL 漏洞 | `references/vulnerabilities/11-graphql-tests.md` |
-| SSRF | `references/vulnerabilities/12-ssrf-tests.md` |
+| SQL 注入 | `../skills/api-security-testing/references/vulnerabilities/01-sqli-tests.md` |
+| IDOR | `../skills/api-security-testing/references/vulnerabilities/04-idor-tests.md` |
+| JWT 漏洞 | `../skills/api-security-testing/references/vulnerabilities/03-jwt-tests.md` |
+| 敏感数据 | `../skills/api-security-testing/references/vulnerabilities/05-sensitive-data-tests.md` |
+| 认证漏洞 | `../skills/api-security-testing/references/vulnerabilities/10-auth-tests.md` |
+| GraphQL 漏洞 | `../skills/api-security-testing/references/vulnerabilities/11-graphql-tests.md` |
+| SSRF | `../skills/api-security-testing/references/vulnerabilities/12-ssrf-tests.md` |
 
 ## 压力升级策略
 
@@ -238,7 +238,7 @@ task_id = await Task.launch("resource-specialist", {
 ```javascript
 task_id = await Task.launch("probing-miner", {
   description: "挖掘 SQL 注入漏洞",
-  prompt: `对 ${endpoint} 进行 SQL 注入测试。\n参考: references/vulnerabilities/01-sqli-tests.md`
+  prompt: `对 ${endpoint} 进行 SQL 注入测试。\n参考: ../skills/api-security-testing/references/vulnerabilities/01-sqli-tests.md`
 })
 ```
 

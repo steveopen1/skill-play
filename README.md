@@ -52,7 +52,7 @@ claude --plugin-dir ./agent-plugins/CLAUDE-CODE/api-security-testing
 
 ```bash
 # 复制到项目 .opencode 目录
-cp -r agent-plugins/OPENCODE/api-security-testing <project>/.opencode/
+cp -r agent-plugins/OPENCODE/api-security-testing/* <project>/.opencode/
 ```
 
 ### 使用方式

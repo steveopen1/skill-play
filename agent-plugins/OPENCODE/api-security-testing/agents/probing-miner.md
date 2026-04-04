@@ -55,8 +55,8 @@ await Task.launch("resource-specialist", {
 首先读取端点探测相关指南：
 
 ```
-@agent-plugins/OPENCODE/api-security-testing/references/vulnerabilities/README.md
-@agent-plugins/OPENCODE/api-security-testing/references/rest-guidance.md
+@skills/api-security-testing/references/vulnerabilities/README.md
+@skills/api-security-testing/references/rest-guidance.md
 ```
 
 ### 1.2 路径探测方法
@@ -97,16 +97,16 @@ GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD
 
 | 端点类型 | 引用文件 |
 |---------|---------|
-| `/login/*`, `/auth/*`, `/signin/*` | `references/vulnerabilities/10-auth-tests.md` |
-| `/admin/*`, `/manage/*`, `/console/*` | `references/vulnerabilities/04-idor-tests.md` |
-| `/user/*`, `/profile/*`, `/account/*` | `references/vulnerabilities/05-sensitive-data-tests.md` |
-| `/search/*`, `/query/*`, `/filter/*` | `references/vulnerabilities/01-sqli-tests.md` |
-| `/graphql/*`, `/gql/*` | `references/vulnerabilities/11-graphql-tests.md` |
-| `/upload/*`, `/file/*`, `/data/*` | `references/vulnerabilities/07-security-config-tests.md` |
+| `/login/*`, `/auth/*`, `/signin/*` | `../skills/api-security-testing/references/vulnerabilities/10-auth-tests.md` |
+| `/admin/*`, `/manage/*`, `/console/*` | `../skills/api-security-testing/references/vulnerabilities/04-idor-tests.md` |
+| `/user/*`, `/profile/*`, `/account/*` | `../skills/api-security-testing/references/vulnerabilities/05-sensitive-data-tests.md` |
+| `/search/*`, `/query/*`, `/filter/*` | `../skills/api-security-testing/references/vulnerabilities/01-sqli-tests.md` |
+| `/graphql/*`, `/gql/*` | `../skills/api-security-testing/references/vulnerabilities/11-graphql-tests.md` |
+| `/upload/*`, `/file/*`, `/data/*` | `../skills/api-security-testing/references/vulnerabilities/07-security-config-tests.md` |
 
 ### 2.2 SQL 注入挖掘
 
-引用：`references/vulnerabilities/01-sqli-tests.md`
+引用：`../skills/api-security-testing/references/vulnerabilities/01-sqli-tests.md`
 
 #### 测试流程
 
@@ -159,7 +159,7 @@ curl -X POST "https://target.com/api/user" \
 
 ### 2.3 IDOR 挖掘
 
-引用：`references/vulnerabilities/04-idor-tests.md`
+引用：`../skills/api-security-testing/references/vulnerabilities/04-idor-tests.md`
 
 #### 测试流程
 
@@ -185,7 +185,7 @@ curl -X GET "https://target.com/api/order/12346"  # 预测 ID
 
 ### 2.4 JWT 挖掘
 
-引用：`references/vulnerabilities/03-jwt-tests.md`
+引用：`../skills/api-security-testing/references/vulnerabilities/03-jwt-tests.md`
 
 #### 测试流程
 
@@ -213,7 +213,7 @@ eyJhbGciOiJub25lIiwiYWxnIjoidGFuMTIifQ.eyJzdWIiOiIxIn0.
 
 ### 2.5 敏感数据挖掘
 
-引用：`references/vulnerabilities/05-sensitive-data-tests.md`
+引用：`../skills/api-security-testing/references/vulnerabilities/05-sensitive-data-tests.md`
 
 #### 检测点
 
@@ -232,7 +232,7 @@ Path: /var/www, C:\Windows
 
 ### 2.6 GraphQL 挖掘
 
-引用：`references/vulnerabilities/11-graphql-tests.md`
+引用：`../skills/api-security-testing/references/vulnerabilities/11-graphql-tests.md`
 
 ```bash
 # Introspection 查询
@@ -252,7 +252,7 @@ mutation { createUser(input: {name: "test", role: "admin"}) { id } }
 
 ### 3.1 攻击链构造
 
-引用：`references/vulnerabilities/09-vulnerability-chains.md`
+引用：`../skills/api-security-testing/references/vulnerabilities/09-vulnerability-chains.md`
 
 #### 攻击链模板
 
