@@ -1,19 +1,19 @@
 {
   "name": "opencode-api-security-testing",
-  "version": "2.1.2",
+  "version": "3.0.0",
   "description": "API Security Testing Plugin for OpenCode - Automated vulnerability scanning and penetration testing",
   "type": "module",
   "main": "src/index.ts",
-  "types": "src/index.ts",
   "files": [
     "src/",
+    "agents/",
     "core/",
     "references/",
     "SKILL.md",
-    "scripts/"
+    "postinstall.mjs"
   ],
   "scripts": {
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node postinstall.mjs"
   },
   "keywords": [
     "opencode",
