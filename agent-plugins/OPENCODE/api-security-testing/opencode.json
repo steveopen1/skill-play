@@ -1,14 +1,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "skills": {
-    "api-security-testing": {
-      "path": ".opencode/skills/api-security-testing/SKILL.md"
-    }
-  },
   "permission": {
     "skill": {
-      "*": "allow",
-      "internal-*": "deny"
+      "*": "allow"
     }
   }
 }
