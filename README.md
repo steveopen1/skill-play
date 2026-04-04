@@ -1,89 +1,129 @@
 # Agent Plugins
 
-多平台 AI Coding Agent 插件集合。
+多平台 AI Coding Agent 插件集合 - API 安全测试专用插件。
 
 ## 目录结构
 
 ```
 agent-plugins/
-├── CLAUDE-CODE/
-│   └── api-security-testing/       # Claude Code API 安全测试插件
-├── OPENCODE/
-│   └── api-security-testing/        # OpenCode API 安全测试插件
+├── CLAUDE-CODE/                          # Claude Code 插件
+│   └── api-security-testing/             #   API 安全测试插件
+│       ├── .claude-plugin/             #   插件清单
+│       ├── commands/                    #   命令 (/:scan, :hook, :status, :off)
+│       ├── agents/                       #   赛博监工 Agent
+│       ├── hooks/                       #   Hooks 配置
+│       ├── skills/                      #   Skill 定义
+│       ├── core/                        #   Python 测试引擎
+│       ├── references/                   #   漏洞测试指南 (13个)
+│       ├── examples/                    #   使用示例
+│       ├── templates/                   #   报告模板
+│       ├── resources/                   #   Payload 资源
+│       ├── bin/                         #   启动脚本
+│       └── scripts/                    #   工具脚本
+│
+├── OPENCODE/                             # OpenCode 插件
+│   └── api-security-testing/            #   API 安全测试插件
+│       ├── opencode.json               #   插件配置
+│       ├── .opencode/
+│       │   ├── commands/               #   命令 (/:scan, :test, :hook, :status)
+│       │   ├── plugins/               #   赛博监工插件
+│       │   └── skills/                #   Skill 定义
+│       ├── core/                      #   Python 测试引擎
+│       ├── references/                 #   漏洞测试指南 (13个)
+│       ├── examples/                   #   使用示例
+│       ├── templates/                  #   报告模板
+│       ├── resources/                  #   Payload 资源
+│       ├── bin/                        #   启动脚本
+│       └── scripts/                   #   工具脚本
+│
 └── README.md
 ```
 
-## 插件列表
+---
 
-### Claude Code 插件
+## Claude Code 插件
 
-#### api-security-testing
-
-全自动 API 安全测试插件 - 内置赛博监工持续监督循环执行。
+### 安装
 
 ```bash
-# 安装
-git clone https://github.com/steveopen1/skill-play.git
-cd skill-play/agent-plugins
+# 方式一: 使用插件目录
+claude --plugin-dir ./agent-plugins/CLAUDE-CODE/api-security-testing
 
-# 使用插件目录
-claude --plugin-dir ./claude-code/api-security-testing
-
-# 或复制到插件目录
-cp -r claude-code/api-security-testing ~/.claude/plugins/
+# 方式二: 复制到插件目录
+cp -r agent-plugins/CLAUDE-CODE/api-security-testing ~/.claude/plugins/
 ```
 
-**使用方式:**
-```
-/api-security-testing scan https://target.com   # 完整扫描
-/api-security-testing:hook on                   # 开启赛博监工
-/api-security-testing:status                    # 查看状态
-/api-security-testing:off                     # 关闭
-```
+### 命令
 
-**功能:**
-- Playwright 强制 JS 动态采集
-- 6 阶段完整测试流程
-- 赛博监工持续监督
-- 10 维度漏洞验证
-- 利用链构造
+| 命令 | 说明 |
+|------|------|
+| `/api-security-testing:scan [URL]` | 完整扫描 |
+| `/api-security-testing:hook on/off` | 开启/关闭赛博监工 |
+| `/api-security-testing:status` | 查看状态 |
+| `/api-security-testing:off` | 关闭 |
 
-### OpenCode 插件
+### 特点
 
-#### api-security-testing
+- **Hooks 自动监测** - PostToolUse, PostToolUseFailure, Stop
+- **赛博监工 Agent** - 自主压力升级 (L1-L4)
+- **6 阶段测试流程** - JS采集 → API发现 → 漏洞检测 → 利用链 → 报告
 
-全自动 API 安全测试插件，专为 OpenCode 设计。
+---
+
+## OpenCode 插件
+
+### 安装
 
 ```bash
-# 复制到项目 .opencode 目录
+# 复制到项目
 cp -r agent-plugins/OPENCODE/api-security-testing <your-project>/.opencode/
 
-# 或复制到全局配置
+# 或复制到全局
 cp -r agent-plugins/OPENCODE/api-security-testing ~/.config/opencode/
 ```
 
-**使用方式:**
-```
-/api-security-testing                  # 主命令 - 显示帮助
-/api-security-testing-scan            # 完整扫描
-/api-security-testing-test            # 快速测试
-/api-security-testing-hook            # 赛博监工控制
-/api-security-testing-status           # 查看状态
-```
+### 命令
 
-**功能:**
-- SKILL.md 基于 OpenCode Agent Skills 规范
-- `.opencode/commands/` 定义自定义命令
-- `.opencode/plugins/cyber-supervisor.js` 实现自动监督
-- 事件钩子: session.created, tool.execute.after, session.idle
-- 赛博监工自动激活监测
+| 命令 | 说明 |
+|------|------|
+| `/api-security-testing` | 主命令 - 显示帮助 |
+| `/api-security-testing-scan` | 完整扫描 |
+| `/api-security-testing-test` | 快速测试 |
+| `/api-security-testing-hook` | 赛博监工控制 |
+| `/api-security-testing-status` | 查看状态 |
 
-**安装后:**
-```bash
-opencode
-# 然后输入命令
-/api-security-testing-scan https://target.com
-```
+### 特点
+
+- **Plugins 自动监测** - session.created, tool.execute.after
+- **赛博监工** - 自动激活，无需手动开启
+- **Skills 目录结构** - `.opencode/skills/*/SKILL.md`
+
+---
+
+## 赛博监工 (Cyber Supervisor)
+
+自主监督机制，失败时自动压力升级：
+
+| 失败次数 | 等级 | 动作 |
+|---------|------|------|
+| 2次 | L1 | 切换方法 |
+| 3次 | L2 | 深度分析 |
+| 5次 | L3 | 7点检查清单 |
+| 7次+ | L4 | 绝望模式 |
+
+---
+
+## 漏洞测试覆盖
+
+| 类别 | 漏洞 |
+|------|------|
+| Injection | SQL注入、XSS、SSRF |
+| Auth | JWT、认证绕过、暴力破解 |
+| Access | IDOR、未授权访问 |
+| Data | 敏感数据暴露 |
+| Config | 安全头部、CORS |
+
+---
 
 ## License
 
