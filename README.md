@@ -51,14 +51,15 @@ claude --plugin-dir ./agent-plugins/CLAUDE-CODE/api-security-testing
 开箱即用的 OpenCode 插件，内置赛博监工自动监督。
 
 ```bash
-# 复制到项目
+# 复制到项目 .opencode 目录
 cp -r agent-plugins/OPENCODE/api-security-testing <project>/.opencode/
 ```
 
-| 命令 | 说明 |
-|------|------|
-| `/api-security-testing-scan` | 完整扫描 |
-| `/api-security-testing-test` | 快速测试 |
+### 使用方式
+
+```
+@cyber-supervisor 对 https://target.com 进行完整 API 安全测试
+```
 
 ---
 
