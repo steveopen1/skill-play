@@ -62,9 +62,9 @@ flowchart TD
 使用 `@` 语法引用漏洞测试指南：
 
 ```
-@agent-plugins/OPENCODE/api-security-testing/references/vulnerabilities/README.md
-@agent-plugins/OPENCODE/api-security-testing/references/rest-guidance.md
-@agent-plugins/OPENCODE/api-security-testing/references/graphql-guidance.md
+@skills/api-security-testing/references/vulnerabilities/README.md
+@skills/api-security-testing/references/rest-guidance.md
+@skills/api-security-testing/references/graphql-guidance.md
 ```
 
 ### 漏洞类别
@@ -116,7 +116,7 @@ flowchart TD
 如需使用独立的 Python 测试引擎：
 
 ```bash
-cd agent-plugins/OPENCODE/api-security-testing
+cd skills/api-security-testing/tools
 python3 core/deep_api_tester_v55.py https://target.com output.md
 ```
 

@@ -6,19 +6,13 @@
 
 ### 方式一：复制到项目 .opencode 目录
 ```bash
-# 将插件内容复制到 .opencode/ 目录（不是嵌套目录）
+# 将插件内容复制到 .opencode/ 目录
 cp -r api-security-testing/* <your-project>/.opencode/
 ```
 
 ### 方式二：复制到全局配置
 ```bash
 cp -r api-security-testing/* ~/.config/opencode/
-```
-
-### 方式三：Marketplace 安装（如支持）
-```bash
-/plugin marketplace add https://github.com/steveopen1/skill-play
-/plugin install api-security-testing
 ```
 
 ## 使用方法
@@ -35,7 +29,7 @@ skills_api_security_testing https://target.com
 
 ### 使用 Python 测试引擎
 ```bash
-cd api-security-testing
+cd skills/api-security-testing/tools
 python3 core/deep_api_tester_v55.py https://target.com output.md
 ```
 
@@ -45,19 +39,26 @@ python3 core/deep_api_tester_v55.py https://target.com output.md
 
 ```
 api-security-testing/
-├── skills/                       # Skills（直接可用）
+├── skills/                       # Skills
 │   └── api-security-testing/     # Skill 名称
-│       └── SKILL.md             # Skill 定义
-├── agents/                       # Agents（通过 @ 调用）
-│   ├── cyber-supervisor.md      # 赛博监工
+│       ├── SKILL.md             # Skill 定义
+│       ├── references/          # 漏洞测试参考文档
+│       │   └── vulnerabilities/  # 12 种漏洞测试指南
+│       ├── tools/               # Python 测试引擎
+│       │   └── core/           # 核心模块
+│       ├── scripts/            # 辅助脚本
+│       └── assets/             # 资源文件
+│           ├── examples/        # 使用示例
+│           ├── templates/       # 报告模板
+│           └── resources/       # Payload 资源
+├── agents/                       # Agents
+│   ├── cyber-supervisor.md     # 赛博监工
 │   ├── probing-miner.md        # 探测挖掘专家
 │   └── resource-specialist.md   # 资源探测专家
-├── plugins/                      # Plugins（自动加载）
+├── plugins/                      # Plugins
 │   └── cyber-supervisor.js      # 赛博监工插件
-├── commands/                     # Commands（/ 命令）
+├── commands/                     # Commands
 │   └── *.md
-├── core/                         # Python 测试引擎
-├── references/                   # 参考文档
 └── opencode.json               # 配置
 ```
 
@@ -67,13 +68,9 @@ api-security-testing/
 .opencode/
 ├── skills/
 │   └── api-security-testing/
-│       └── SKILL.md
 ├── agents/
-│   ├── cyber-supervisor.md
-│   ├── probing-miner.md
-│   └── resource-specialist.md
 ├── plugins/
-│   └── cyber-supervisor.js
+├── commands/
 └── opencode.json
 ```
 
@@ -84,7 +81,7 @@ api-security-testing/
 - **漏洞检测** - SQLi/XSS/IDOR/敏感数据/安全头部
 - **赛博监工** - 自动监测进度、失败升级
 - **Markdown 报告生成** - 自动生成测试报告
-- **Python 测试引擎** - core/ 提供完整测试能力
+- **Python 测试引擎** - tools/core/ 提供完整测试能力
 
 ## 漏洞测试覆盖
 
