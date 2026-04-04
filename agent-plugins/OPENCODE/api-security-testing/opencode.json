@@ -14,8 +14,12 @@
       "description": "API端点探测专家",
       "mode": "subagent"
     },
-    "vuln-verifier": {
-      "description": "漏洞验证专家",
+    "vulnerability-miner": {
+      "description": "漏洞挖掘专家",
+      "mode": "subagent"
+    },
+    "resource-specialist": {
+      "description": "资源探测专家（JS采集、敏感信息挖掘）",
       "mode": "subagent"
     }
   }
