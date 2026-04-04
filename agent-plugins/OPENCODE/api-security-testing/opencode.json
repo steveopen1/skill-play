@@ -5,33 +5,6 @@
       "path": ".opencode/skills/api-security-testing/SKILL.md"
     }
   },
-  "commands": {
-    "api-security-testing": {
-      "description": "API Security Testing 主命令",
-      "path": ".opencode/commands/api-security-testing.md"
-    },
-    "api-security-testing:scan": {
-      "description": "完整扫描模式",
-      "path": ".opencode/commands/api-security-testing-scan.md"
-    },
-    "api-security-testing:test": {
-      "description": "快速测试模式",
-      "path": ".opencode/commands/api-security-testing-test.md"
-    },
-    "api-security-testing:hook": {
-      "description": "赛博监工控制",
-      "path": ".opencode/commands/api-security-testing-hook.md"
-    },
-    "api-security-testing:status": {
-      "description": "查看状态",
-      "path": ".opencode/commands/api-security-testing-status.md"
-    }
-  },
-  "plugins": {
-    "cyber-supervisor": {
-      "path": ".opencode/plugins/cyber-supervisor.js"
-    }
-  },
   "permission": {
     "skill": {
       "*": "allow",
