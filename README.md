@@ -65,8 +65,8 @@ cp -r agent-plugins/OPENCODE/api-security-testing ~/.config/opencode/skills/
 **使用方式:**
 ```
 /api-security-testing scan https://target.com   # 完整扫描
-/cyber-supervisor on                            # 开启赛博监工
-/cyber-supervisor status                        # 查看状态
+/api-security-testing:hook on                   # 开启赛博监工
+/api-security-testing:status                    # 查看状态
 ```
 
 **功能:**
