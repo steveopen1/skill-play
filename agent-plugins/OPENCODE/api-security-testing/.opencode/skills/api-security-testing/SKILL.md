@@ -5,35 +5,16 @@ license: MIT
 compatibility: opencode
 ---
 
-## API Security Testing - API 安全测试
+# API Security Testing - API 安全测试
 
-### 核心能力
+## 核心能力
 
-1. **Playwright 强制 JS 动态采集**
-   - 无头浏览器执行 JavaScript
-   - 动态路由发现
-   - XHR/Fetch 请求拦截
+1. **Playwright JS 动态采集** - 无头浏览器执行，XHR/Fetch 拦截
+2. **API 端点智能发现** - JS 解析、URL 模式识别
+3. **漏洞检测** - SQLi、XSS、IDOR、敏感数据、安全头部
+4. **赛博监工** - 自动监测，压力升级 (L1-L4)
 
-2. **API 端点智能发现**
-   - JS 文件解析提取 API 路径
-   - URL 模式识别与去重
-   - 敏感端点识别
-
-3. **漏洞检测**
-   - SQL 注入 (SQLi)
-   - XSS 跨站脚本
-   - IDOR 水平越权
-   - 敏感数据暴露
-   - 安全头部检查
-
-4. **赛博监工机制 (Cyber Supervisor)**
-   - **自动激活**：执行扫描时自动开启监督
-   - 监控测试进度 (Progress)
-   - 检测失败次数 (Failure Count)
-   - 触发压力升级 (L1-L4)
-   - 决策是否继续循环
-
-### 测试流程
+## 测试流程
 
 ```
 Phase 1: JS 动态采集
@@ -42,53 +23,76 @@ Phase 2: API 端点发现
     ↓
 Phase 3: 漏洞检测
     ↓
-Phase 4: 赛博监工验证与利用链构造
+Phase 4: 利用链构造
     ↓
 Phase 5: 自动报告生成
 ```
 
-### 命令使用
+## 决策树
 
-当用户提到以下关键词时自动激活：
-- "API 安全测试"
-- "漏洞扫描"
-- "渗透测试"
-- "检测 API 漏洞"
-- `/api-security-testing`
-
-### 执行命令
-
-```bash
-# 完整扫描 (自动激活赛博监工)
-/api-security-testing scan https://target.com
-
-# 快速测试
-/api-security-testing test https://target.com/api/endpoint
-
-# 查看状态
-/api-security-testing status
+```mermaid
+flowchart TD
+    A["开始: 获取目标URL"] --> B{"目标可访问?"}
+    B -->|否| Z["报告: 目标不可达"]
+    B -->|是| C{"识别技术栈"}
+    C --> D{"SPA应用?"}
+    D -->|是| E["Phase 1: JS采集【禁止降级】"]
+    D -->|否| F["Phase 2: 直接探测API"]
+    E --> G["Phase 2: JS深度分析"]
+    G --> H["Phase 3: API测试"]
+    H --> I{"发现漏洞?"}
+    I -->|是| J["Phase 4: 漏洞验证"]
+    J --> K["构建利用链"]
+    K --> L["生成报告"]
+    I -->|否| L
+    F --> H
 ```
 
-### 赛博监工自动机制
+## 执行命令
 
-**重要**：当执行扫描命令时，赛博监工**自动激活**，无需手动开启。
+| 命令 | 说明 |
+|------|------|
+| `/api-security-testing-scan` | 完整扫描 |
+| `/api-security-testing-test` | 快速测试 |
+| `/api-security-testing-hook` | 赛博监工控制 |
+| `/api-security-testing-status` | 查看状态 |
 
-赛博监工自动执行以下操作：
-1. **监听每次工具执行** - 检测失败、发现新漏洞
-2. **压力升级** - 失败次数达到阈值时自动升级
-3. **进度监控** - 进度过低时警告
-4. **完成通知** - 测试完成时通知
+## 漏洞测试参考
 
-### 压力升级机制
+使用 `@` 语法引用漏洞测试指南：
 
-| 失败次数 | 等级 | 自动动作 |
-|---------|------|---------|
-| 2次 | L1 | 切换方法继续 |
+```
+@agent-plugins/OPENCODE/api-security-testing/references/vulnerabilities/README.md
+@agent-plugins/OPENCODE/api-security-testing/references/rest-guidance.md
+@agent-plugins/OPENCODE/api-security-testing/references/graphql-guidance.md
+```
+
+### 漏洞类别
+
+| 类别 | 参考文件 |
+|------|----------|
+| SQL 注入 | `references/vulnerabilities/01-sqli-tests.md` |
+| 用户枚举 | `references/vulnerabilities/02-user-enum-tests.md` |
+| JWT 安全 | `references/vulnerabilities/03-jwt-tests.md` |
+| IDOR | `references/vulnerabilities/04-idor-tests.md` |
+| 敏感数据 | `references/vulnerabilities/05-sensitive-data-tests.md` |
+| 业务逻辑 | `references/vulnerabilities/06-biz-logic-tests.md` |
+| 安全配置 | `references/vulnerabilities/07-security-config-tests.md` |
+| 暴力破解 | `references/vulnerabilities/08-brute-force-tests.md` |
+| GraphQL | `references/vulnerabilities/11-graphql-tests.md` |
+
+## 赛博监工
+
+**自动激活**，当执行扫描命令时自动开启监督。
+
+| 失败次数 | 等级 | 动作 |
+|---------|------|------|
+| 2次 | L1 | 切换方法 |
 | 3次 | L2 | 深度分析 |
-| 5次 | L3 | 执行7点检查清单 |
-| 7次+ | L4 | 绝望模式，拼死一搏 |
+| 5次 | L3 | 7点检查清单 |
+| 7次+ | L4 | 绝望模式 |
 
-### 漏洞验证标准
+## 漏洞验证标准
 
 | 严重程度 | 漏洞类型 | 验证方式 |
 |----------|----------|----------|
@@ -98,7 +102,7 @@ Phase 5: 自动报告生成
 | MEDIUM | 敏感数据暴露 | 数据脱敏检查 |
 | LOW | 安全头部缺失 | HTTP 头部分析 |
 
-### 输出格式
+## 输出格式
 
 自动生成 Markdown 格式测试报告，包含：
 - 测试目标信息
@@ -107,19 +111,16 @@ Phase 5: 自动报告生成
 - 利用链说明
 - 修复建议
 
-### 赛博监工控制
+## 使用 Python 测试引擎
 
-虽然默认自动激活，但仍支持手动控制：
+如需使用独立的 Python 测试引擎：
 
 ```bash
-/cyber-supervisor on    # 手动开启
-/cyber-supervisor off   # 手动关闭
-/cyber-supervisor status  # 查看状态
-/cyber-supervisor reset  # 重置状态
+cd agent-plugins/OPENCODE/api-security-testing
+python3 core/deep_api_tester_v55.py https://target.com output.md
 ```
 
-### 注意事项
+## 重要
 
 - 仅用于合法授权的安全测试
 - 测试前确保有书面授权
-- 敏感操作需二次确认

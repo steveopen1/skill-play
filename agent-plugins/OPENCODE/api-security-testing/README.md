@@ -23,21 +23,20 @@ cp -r api-security-testing ~/.config/opencode/
 
 ## 使用方法
 
-### 激活扫描
-```
-/api-security-testing scan https://target.com
-```
+### 命令
 
-### 赛博监工
+| 命令 | 说明 |
+|------|------|
+| `/api-security-testing` | 主命令 - 显示帮助 |
+| `/api-security-testing-scan` | 完整扫描 |
+| `/api-security-testing-test` | 快速测试 |
+| `/api-security-testing-hook` | 赛博监工控制 |
+| `/api-security-testing-status` | 查看状态 |
 
-**自动激活**：执行扫描时赛博监工自动开启监督，无需手动激活。
+### 示例
 
-手动控制：
 ```
-/cyber-supervisor on    # 开启监督
-/cyber-supervisor off   # 关闭监督
-/cyber-supervisor status  # 查看状态
-/cyber-supervisor reset  # 重置状态
+/api-security-testing-scan https://target.com
 ```
 
 ## 目录结构
@@ -45,26 +44,44 @@ cp -r api-security-testing ~/.config/opencode/
 ```
 api-security-testing/
 ├── .opencode/
-│   ├── commands/                    # 命令定义
+│   ├── commands/                        # 命令定义
 │   │   ├── api-security-testing.md
-│   │   ├── scan.md
-│   │   ├── test.md
-│   │   ├── hook.md
-│   │   └── status.md
+│   │   ├── api-security-testing-scan.md
+│   │   ├── api-security-testing-test.md
+│   │   ├── api-security-testing-hook.md
+│   │   └── api-security-testing-status.md
 │   ├── plugins/
-│   │   └── cyber-supervisor.js     # 赛博监工插件
+│   │   └── cyber-supervisor.js          # 赛博监工插件
 │   └── skills/
 │       └── api-security-testing/
-│           └── SKILL.md            # Agent Skill 定义
+│           └── SKILL.md                # Agent Skill 定义
+├── core/                               # Python 测试引擎
+│   ├── deep_api_tester_v55.py         # API 深度测试
+│   ├── browser_tester.py              # 浏览器测试
+│   ├── collectors/                      # 采集器
+│   │   ├── js_collector.py
+│   │   ├── browser_collector.py
+│   │   └── api_path_finder.py
+│   ├── analyzers/                      # 分析器
+│   │   ├── api_parser.py
+│   │   ├── response_analyzer.py
+│   │   └── sensitive_finder.py
+│   └── cloud_storage_tester.py        # 云存储测试
+├── references/                        # 参考文档
+│   ├── vulnerabilities/                # 漏洞测试 (12个)
+│   ├── workflows.md                   # 工作流
+│   ├── rest-guidance.md              # REST API 测试
+│   ├── graphql-guidance.md           # GraphQL 测试
+│   ├── test-matrix.md                # 测试矩阵
+│   └── severity-model.md             # 严重性模型
 ├── bin/
-│   └── session-start.sh             # 会话启动脚本
+│   └── session-start.sh              # 会话启动脚本
 ├── scripts/
-│   └── js_collector.py             # JS 采集脚本
-├── references/                      # 参考文档 (12 种漏洞测试)
-├── examples/                        # 使用示例
-├── templates/                       # 测试模板
-├── resources/                       # 资源文件
-├── opencode.json                   # 配置
+│   └── js_collector.py               # JS 采集脚本
+├── examples/                         # 使用示例
+├── templates/                        # 测试模板
+├── resources/                        # 资源文件
+├── opencode.json                    # 配置
 └── README.md
 ```
 
@@ -72,24 +89,39 @@ api-security-testing/
 
 - ✅ **Playwright JS 动态采集** - 无头浏览器执行 JavaScript
 - ✅ **API 端点智能发现** - JS 解析 + 流量拦截
-- ✅ **漏洞检测** - SQLi/XSS/IDOR/敏感数据等
+- ✅ **漏洞检测** - SQLi/XSS/IDOR/敏感数据/安全头部
 - ✅ **赛博监工自动监督** - 自动监测进度、失败升级
 - ✅ **Markdown 报告生成** - 自动生成测试报告
+- ✅ **Python 测试引擎** - core/ 提供完整测试能力
 
-## 赛博监工机制
+## 赛博监工
 
-当执行扫描时自动激活，监控：
+**自动激活**：执行扫描时赛博监工自动开启监督。
 
-| 事件 | 动作 |
+| 失败次数 | 等级 | 动作 |
+|---------|------|------|
+| 2次 | L1 | 切换方法 |
+| 3次 | L2 | 深度分析 |
+| 5次 | L3 | 7点检查清单 |
+| 7次+ | L4 | 绝望模式 |
+
+## 使用 Python 测试引擎
+
+```bash
+cd api-security-testing
+python3 core/deep_api_tester_v55.py https://target.com output.md
+```
+
+## 漏洞测试覆盖
+
+| 类别 | 说明 |
 |------|------|
-| 工具执行 | 检测失败、发现新漏洞 |
-| 失败累积 | 自动压力升级 (L1→L4) |
-| 进度过低 | 警告提示 |
-| 测试完成 | 通知报告 |
-
-## 权限配置
-
-在 `opencode.json` 中已配置，无需额外设置。
+| SQL 注入 | 布尔盲注、时间盲注、报错注入 |
+| XSS | 反射型、存储型、DOM 型 |
+| IDOR | 水平越权、垂直越权 |
+| JWT | Token 伪造、算法绕过 |
+| 敏感数据 | 密码、密钥、个人信息 |
+| 安全配置 | CORS、HSTS、头部 |
 
 ## License
 

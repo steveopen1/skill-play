@@ -14,7 +14,13 @@ agent: build
 
 ## 漏洞测试参考
 
-参考 @references/vulnerabilities/README.md 和 @references/workflows.md 进行测试。
+使用 `@` 语法引用漏洞测试指南：
+
+```
+@agent-plugins/OPENCODE/api-security-testing/references/vulnerabilities/README.md
+@agent-plugins/OPENCODE/api-security-testing/references/workflows.md
+@agent-plugins/OPENCODE/api-security-testing/references/test-matrix.md
+```
 
 ## 输出要求
 
