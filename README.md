@@ -1,102 +1,133 @@
-# Agent Plugins
+# API Security Testing Suite
 
-多平台 AI Coding Agent 插件集合 - API 安全测试专用插件。
+多版本 API 安全测试 Skill 集合。
 
 ## 目录结构
 
 ```
-agent-plugins/
-├── CLAUDE-CODE/                          # Claude Code 插件
-│   └── api-security-testing/             #   API 安全测试插件
-│       ├── .claude-plugin/             #   插件清单
-│       ├── commands/                    #   命令 (/:scan, :hook, :status, :off)
-│       ├── agents/                       #   赛博监工 Agent
-│       ├── hooks/                       #   Hooks 配置
-│       ├── skills/                      #   Skill 定义
-│       ├── core/                        #   Python 测试引擎
-│       ├── references/                   #   漏洞测试指南 (13个)
-│       ├── examples/                    #   使用示例
-│       ├── templates/                   #   报告模板
-│       ├── resources/                   #   Payload 资源
-│       ├── bin/                         #   启动脚本
-│       └── scripts/                    #   工具脚本
+skill-play/
+├── agent-plugins/                       # Agent 插件 (开箱即用)
+│   ├── CLAUDE-CODE/                   # Claude Code 插件
+│   └── OPENCODE/                      # OpenCode 插件
 │
-├── OPENCODE/                             # OpenCode 插件
-│   └── api-security-testing/            #   API 安全测试插件
-│       ├── opencode.json               #   插件配置
-│       ├── .opencode/
-│       │   ├── commands/               #   命令 (/:scan, :test, :hook, :status)
-│       │   ├── plugins/               #   赛博监工插件
-│       │   └── skills/                #   Skill 定义
-│       ├── core/                      #   Python 测试引擎
-│       ├── references/                 #   漏洞测试指南 (13个)
-│       ├── examples/                   #   使用示例
-│       ├── templates/                  #   报告模板
-│       ├── resources/                  #   Payload 资源
-│       ├── bin/                        #   启动脚本
-│       └── scripts/                   #   工具脚本
+├── api-security-testing-refactored/     # Skill 重构版
+│   ├── SKILL.md                       # Skill 入口
+│   ├── core/                          # 核心能力模块
+│   ├── references/                    # 参考文档
+│   └── examples/                      # 使用示例
+│
+├── API-Security-Testing-Optimized/   # Skill 优化版
+│   ├── SKILL.md                       # Skill 入口
+│   ├── core/                          # 核心能力模块
+│   ├── references/                    # 参考文档
+│   └── templates/                     # 报告模板
+│
+├── security-testing/                   # Payload 知识库
+│   ├── SKILL.md                       # Skill 入口
+│   └── data/                          # Payload 数据
 │
 └── README.md
 ```
 
 ---
 
-## Claude Code 插件
+## Agent 插件
 
-### 安装
+### Claude Code 插件
+
+开箱即用的 Claude Code 插件，内置赛博监工自动监督。
 
 ```bash
-# 方式一: 使用插件目录
 claude --plugin-dir ./agent-plugins/CLAUDE-CODE/api-security-testing
-
-# 方式二: 复制到插件目录
-cp -r agent-plugins/CLAUDE-CODE/api-security-testing ~/.claude/plugins/
 ```
-
-### 命令
 
 | 命令 | 说明 |
 |------|------|
 | `/api-security-testing:scan [URL]` | 完整扫描 |
 | `/api-security-testing:hook on/off` | 开启/关闭赛博监工 |
-| `/api-security-testing:status` | 查看状态 |
-| `/api-security-testing:off` | 关闭 |
 
-### 特点
+### OpenCode 插件
 
-- **Hooks 自动监测** - PostToolUse, PostToolUseFailure, Stop
-- **赛博监工 Agent** - 自主压力升级 (L1-L4)
-- **6 阶段测试流程** - JS采集 → API发现 → 漏洞检测 → 利用链 → 报告
-
----
-
-## OpenCode 插件
-
-### 安装
+开箱即用的 OpenCode 插件，内置赛博监工自动监督。
 
 ```bash
 # 复制到项目
-cp -r agent-plugins/OPENCODE/api-security-testing <your-project>/.opencode/
-
-# 或复制到全局
-cp -r agent-plugins/OPENCODE/api-security-testing ~/.config/opencode/
+cp -r agent-plugins/OPENCODE/api-security-testing <project>/.opencode/
 ```
-
-### 命令
 
 | 命令 | 说明 |
 |------|------|
-| `/api-security-testing` | 主命令 - 显示帮助 |
 | `/api-security-testing-scan` | 完整扫描 |
 | `/api-security-testing-test` | 快速测试 |
-| `/api-security-testing-hook` | 赛博监工控制 |
-| `/api-security-testing-status` | 查看状态 |
 
-### 特点
+---
 
-- **Plugins 自动监测** - session.created, tool.execute.after
-- **赛博监工** - 自动激活，无需手动开启
-- **Skills 目录结构** - `.opencode/skills/*/SKILL.md`
+## api-security-testing-refactored
+
+符合 skill-creator 规范的 Skill 重构版。
+
+### 设计理念
+
+| 理念 | 说明 |
+|------|------|
+| Skill 是框架 | SKILL.md 定义决策流程，core/ 提供执行能力 |
+| 语义分析优先 | 路径模式只是线索，需要分析接口语义 |
+| 模块化能力池 | core/ 是能力池，根据目标特征动态组合 |
+
+### 触发词
+
+- 安全测试、安全审计、渗透测试
+- 漏洞检测、安全评估
+- api安全、接口安全
+
+### 强制要求
+
+1. **必须使用 Playwright** 进行 JS 动态采集
+2. **必须拦截所有 XHR/Fetch 请求**
+3. **必须模拟用户交互** 触发动态 API
+4. **必须处理 HTTPS 证书问题**
+
+---
+
+## API-Security-Testing-Optimized
+
+Skill 优化版，集成推理引擎和策略池。
+
+### 核心能力
+
+- **多维度漏洞检测** - D1-D6 综合评分
+- **云存储检测** - OSS/COS/S3/MinIO
+- **GraphQL 检测** - 嵌套遍历/权限绕过
+- **推理引擎** - 智能决策
+
+### 漏洞判定算法
+
+```
+RiskScore = D1×0.15 + D2×0.20 + D3×0.25 + D4×0.20 + D5×0.15 + D6×0.05
+```
+
+---
+
+## security-testing
+
+渗透测试 Payload 知识库。
+
+### 漏洞类别
+
+| 类别 | 说明 |
+|------|------|
+| SQL 注入 | MySQL/MSSQL/PostgreSQL/Oracle/MongoDB/Redis |
+| XSS | 反射型、存储型、DOM 型 |
+| SSRF | 敏感 URI、绕过技术 |
+| CSRF | Token 绕过 |
+
+### 攻击链模板
+
+每个漏洞目录包含：
+- 基础 Payload
+- WAF 绕过
+- 攻击链
+- 检测脚本
 
 ---
 
@@ -110,18 +141,6 @@ cp -r agent-plugins/OPENCODE/api-security-testing ~/.config/opencode/
 | 3次 | L2 | 深度分析 |
 | 5次 | L3 | 7点检查清单 |
 | 7次+ | L4 | 绝望模式 |
-
----
-
-## 漏洞测试覆盖
-
-| 类别 | 漏洞 |
-|------|------|
-| Injection | SQL注入、XSS、SSRF |
-| Auth | JWT、认证绕过、暴力破解 |
-| Access | IDOR、未授权访问 |
-| Data | 敏感数据暴露 |
-| Config | 安全头部、CORS |
 
 ---
 
