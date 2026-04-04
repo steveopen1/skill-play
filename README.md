@@ -133,14 +133,48 @@ RiskScore = D1×0.15 + D2×0.20 + D3×0.25 + D4×0.20 + D5×0.15 + D6×0.05
 
 ## 赛博监工 (Cyber Supervisor)
 
-自主监督机制，失败时自动压力升级：
+自主监督机制，失败时自动压力升级。参考 **oh-my-openagent** 的 orchestration 模式。
+
+### Agent 角色
+
+| Agent | 模式参考 | 职责 |
+|-------|---------|------|
+| cyber-supervisor | Sisyphus (主协调器) | Task.launch 委派子 agent |
+| probing-miner | Hephaestus (深度工作者) | 漏洞挖掘、攻击链构造 |
+| resource-specialist | Hephaestus (深度工作者) | Playwright 动态采集 |
+
+### 压力升级
 
 | 失败次数 | 等级 | 动作 |
 |---------|------|------|
 | 2次 | L1 | 切换方法 |
-| 3次 | L2 | 深度分析 |
-| 5次 | L3 | 7点检查清单 |
-| 7次+ | L4 | 绝望模式 |
+| 3次 | L2 | Task.launch 委派 resource-specialist |
+| 5次 | L3 | Task.launch 委派 probing-miner |
+| 7次+ | L4 | 组合委派两个 agent |
+
+### Task.launch 委派 (OpenCode)
+
+```javascript
+// 委派资源采集
+await Task.launch("resource-specialist", {
+  description: "采集目标 JS 资源",
+  prompt: `目标: ${targetUrl}\n使用 Playwright 采集动态内容。`
+})
+
+// 委派漏洞挖掘
+await Task.launch("probing-miner", {
+  description: "挖掘 SQL 注入",
+  prompt: `端点: ${endpoint}\n参考漏洞指南进行测试。`
+})
+```
+
+### Claude Code 委派
+
+Claude Code 使用主对话请求方式委派：
+
+```
+请生成一个 endpoint-specialist subagent 来探测 /admin/api/users 端点
+```
 
 ---
 
