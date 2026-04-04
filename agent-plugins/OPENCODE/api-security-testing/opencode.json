@@ -4,5 +4,19 @@
     "skill": {
       "*": "allow"
     }
+  },
+  "agent": {
+    "cyber-supervisor": {
+      "description": "API安全测试的赛博监工",
+      "mode": "subagent"
+    },
+    "endpoint-specialist": {
+      "description": "API端点探测专家",
+      "mode": "subagent"
+    },
+    "vuln-verifier": {
+      "description": "漏洞验证专家",
+      "mode": "subagent"
+    }
   }
 }
