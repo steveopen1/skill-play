@@ -1,9 +1,35 @@
 {
-  "name": "api-security-testing",
+  "name": "opencode-api-security-testing",
   "version": "1.0.0",
-  "description": "API Security Testing Plugin for OpenCode",
+  "description": "API Security Testing Plugin for OpenCode - Automated vulnerability scanning and penetration testing",
   "type": "module",
-  "main": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target bun --format esm && tsc --emitDeclarationOnly",
+    "dev": "bun build src/index.ts --outdir dist --target bun --format esm --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "security",
+    "api-security",
+    "pentest",
+    "vulnerability-scanning"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.1.19",
+    "@opencode-ai/sdk": "^1.1.19"
+  },
   "dependencies": {
     "@opencode-ai/plugin": "^1.1.19",
     "@opencode-ai/sdk": "^1.1.19"
