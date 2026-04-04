@@ -1,105 +1,123 @@
 ---
 name: security-testing
-description: 渗透测试 Payload 知识库 - 提供 SQL注入、XSS、SSRF、RCE、LFI、XXE、SSTI 等漏洞的 Payload、WAF绕过和攻击链模板。支持 Web渗透、内网渗透、工具命令。
+description: 渗透测试 Payload 知识库 - 提供 SQL注入、XSS、SSRF、RCE、LFI、XXE、SSTI 等漏洞的 Payload，WAF绕过和攻击链模板。使用时用 @data/xxx 引用对应文件。
 ---
 
 # Security Testing - 渗透测试 Payload 知识库
 
 ## 概述
 
-本 Skill 提供完整的渗透测试 Payload 知识库、工具命令和攻击链模板，供 AI-Agent 在执行安全测试时参考使用。
-
-## 漏洞类别
-
-### Web 漏洞
-
-| 类别 | 路径 | 说明 |
-|------|------|------|
-| SQL 注入 | `data/web/sqli/` | MySQL/MSSQL/Oracle/PostgreSQL/MongoDB/Redis |
-| XSS | `data/web/xss/` | 反射型、存储型、DOM 型 |
-| SSRF | `data/web/ssrf/` | 服务端请求伪造 |
-| RCE | `data/web/rce/` | 远程代码执行 |
-| LFI | `data/web/lfi/` | 文件包含 |
-| XXE | `data/web/xxe/` | XML 实体注入 |
-| SSTI | `data/web/ssti/` | 模板注入 |
-| CSRF | `data/web/csrf.md` | 跨站请求伪造 |
-| JWT | `data/web/jwt.md` | JSON Web Token |
-| API | `data/web/api.md` | API 安全 |
-
-### 内网渗透
-
-| 阶段 | 路径 | 说明 |
-|------|------|------|
-| 信息收集 | `data/intranet/recon/` | 目标探测、端口扫描 |
-| 凭证窃取 | `data/intranet/cred theft/` | 密码抓取、Hash 传递 |
-| 横向移动 | `data/intranet/lateral/` | 令牌窃取、远程服务 |
-| 权限提升 | `data/intranet/privesc/` | 本地提权、Sudo 攻击 |
-| 权限维持 | `data/intranet/persistence/` | 后门、计划任务 |
-| 隧道代理 | `data/intranet/tunnel/` | 端口转发、SOCKS 代理 |
-| 域渗透 | `data/intranet/ad-attack/` | AD 枚举、Kerberos 攻击 |
-
-### 工具命令
-
-| 工具 | 路径 |
-|------|------|
-| Nmap | `data/tools/nmap.md` |
-| SQLMap | `data/tools/sqlmap.md` |
-| Metasploit | `data/tools/metasploit.md` |
-| Hydra | `data/tools/hydra.md` |
-| Hashcat | `data/tools/hashcat.md` |
-| CrackMapExec | `data/tools/crackmapexec.md` |
-| PowerShell | `data/tools/powershell.md` |
+本 Skill 提供完整的渗透测试 Payload 知识库。使用时通过 `@` 语法引用 `data/` 目录下的文件。
 
 ## 使用方式
 
-### 按漏洞类型查询
+**重要**：使用 `@` 语法引用文件内容到上下文中。
 
-当需要进行特定漏洞测试时，参考对应 Payload：
+### SQL 注入
 
-```markdown
-参考 data/web/sqli/ 获取 SQL 注入 Payload
-参考 data/web/xss/ 获取 XSS Payload
+```
+@data/web/sqli/mysql.md        # MySQL 注入
+@data/web/sqli/mssql.md        # MSSQL 注入
+@data/web/sqli/oracle.md       # Oracle 注入
+@data/web/sqli/postgresql.md    # PostgreSQL 注入
+@data/web/sqli/mongodb.md       # MongoDB 注入
+@data/web/sqli/redis.md         # Redis 注入
+@data/web/sqli/blind.md        # 盲注技术
+@data/web/sqli/time-blind.md    # 时间盲注
+@data/web/sqli/error-based.md   # 报错注入
+@data/web/sqli/union.md        # 联合查询
+@data/web/sqli/waf-bypass.md    # WAF 绕过
+@data/web/sqli/attack-chain.md  # 攻击链
 ```
 
-### 攻击链构造
+### XSS
 
-每个漏洞目录包含：
-- **基础 Payload** - 常用测试语句
-- **WAF 绕过** - 编码、混淆、拆分
-- **攻击链** - 组合利用步骤
-- **详细分类** - 技术原理和变种
-
-### 工具使用
-
-```markdown
-参考 data/tools/sqlmap.md 使用 SQLMap
-参考 data/tools/nmap.md 进行端口扫描
+```
+@data/web/xss/xss-detail.md     # XSS 详细分类
+@data/web/xss/waf-bypass.md     # WAF 绕过
+@data/web/xss/attack-chain.md    # 攻击链
 ```
 
-## 示例
+### SSRF
 
-### SQL 注入攻击链
-
-```markdown
-1. 检测点: id=1
-2. 基础测试: id=1' OR '1'='1
-3. 确认注入: id=1 AND 1=1 (正常) vs id=1 AND 1=2 (错误)
-4. 枚举数据库: id=1 UNION SELECT null,table_name FROM information_schema.tables
-5. 提取数据: id=1 UNION SELECT null,username,password FROM users
+```
+@data/web/ssrf/ssrf-detail.md   # SSRF 详细分类
+@data/web/ssrf/waf-bypass.md    # WAF 绕过
+@data/web/ssrf/attack-chain.md   # 攻击链
 ```
 
-### XSS WAF 绕过
+### RCE
 
-```markdown
-1. 基础测试: <script>alert(1)</script>
-2. 大小写混合: <ScRiPt>alert(1)</ScRiPt>
-3. HTML 编码: &lt;script&gt;alert(1)&lt;/script&gt;
-4. URL 编码: %3Cscript%3Ealert(1)%3C/script%3E
-5. 拆分绕过: <scr'+'ipt>alert(1)</scr'+'ipt>
+```
+@data/web/rce/rce-detail.md     # RCE 详细分类
+@data/web/rce/waf-bypass.md     # WAF 绕过
+@data/web/rce/attack-chain.md    # 攻击链
+```
+
+### 文件包含
+
+```
+@data/web/lfi/lfi-detail.md    # LFI 详细分类
+@data/web/lfi/waf-bypass.md     # WAF 绕过
+@data/web/lfi/attack-chain.md    # 攻击链
+```
+
+### JWT
+
+```
+@data/web/jwt.md                # JWT 安全基础
+@data/web/jwt/jwt-detail.md     # JWT 详细
+```
+
+### 其他漏洞
+
+```
+@data/web/csrf.md               # CSRF
+@data/web/auth.md               # 认证漏洞
+@data/web/auth-detail.md       # 认证漏洞详细
+@data/web/api.md               # API 安全
+@data/web/api-detail.md        # API 详细
+@data/web/websocket.md         # WebSocket 安全
+@data/web/smuggling.md         # HTTP 请求走私
+@data/web/biz-logic.md         # 业务逻辑
+@data/web/redirect.md          # 开放重定向
+```
+
+### 内网渗透
+
+```
+@data/intranet/recon/intranet-detail.md        # 信息收集
+@data/intranet/cred theft/credential-theft-detail.md  # 凭证窃取
+@data/intranet/lateral/lateral-detail.md      # 横向移动
+@data/intranet/privesc/privesc-detail.md     # 权限提升
+@data/intranet/tunnel/tunnel-detail.md        # 隧道代理
+@data/intranet/ad-attack/ad-attack-detail.md  # 域渗透
+```
+
+### 工具命令
+
+```
+@data/tools/nmap.md              # Nmap
+@data/tools/sqlmap.md           # SQLMap
+@data/tools/metasploit.md       # Metasploit
+@data/tools/hydra.md           # Hydra
+@data/tools/hashcat.md          # Hashcat
+@data/tools/crackmapexec.md     # CrackMapExec
+@data/tools/powershell.md       # PowerShell
+@data/tools/reverse-shell.md    # 反向 Shell
+```
+
+## 使用示例
+
+当需要进行 SQL 注入测试时：
+
+```
+1. 使用 @data/web/sqli/mysql.md 获取 MySQL 注入 Payload
+2. 使用 @data/web/sqli/waf-bypass.md 获取绕过方法
+3. 参考 @data/web/sqli/attack-chain.md 构造攻击链
 ```
 
 ## 重要
 
 - 仅用于授权渗透测试
 - 遵循网络安全法律法规
-- 遵守授权范围和期限
