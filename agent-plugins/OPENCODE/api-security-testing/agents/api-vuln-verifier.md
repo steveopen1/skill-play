@@ -1,4 +1,6 @@
 ---
+version: ">=1.0.0"
+requires: ">=1.0.0"
 description: 漏洞验证专家。验证和确认安全漏洞。
 mode: subagent
 ---
@@ -28,7 +30,7 @@ mode: subagent
 
 ## 输出格式
 
-\`\`\`
+```
 ## 验证结果
 
 **漏洞类型**: {type}
@@ -40,10 +42,10 @@ mode: subagent
 1. {step}
 
 ### PoC
-\`\`\`bash
+```bash
 {command}
-\`\`\`
+```
 
 ### 修复建议
 {fix}
-\`\`\`
+```

@@ -14,19 +14,9 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Detect platform and set HOME correctly
-function getHomeDir() {
-  if (process.platform === "win32") {
-    return process.env.USERPROFILE || process.env.APPDATA?.split("\\").slice(0, -1).join("\\") || "C:\\Users\\" + process.env.USERNAME;
-  }
-  return process.env.HOME || "/root";
-}
-
 function getOpencodeAgentsDir() {
-  const home = getHomeDir();
-  if (process.platform === "win32") {
-    return join(home, "AppData", "Local", "opencode", "agents");
-  }
+  const home = process.env.HOME || process.env.USERPROFILE || "/root";
+  // OpenCode uses ~/.config/opencode/agents on ALL platforms including Windows
   return join(home, ".config", "opencode", "agents");
 }
 

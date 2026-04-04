@@ -1,4 +1,6 @@
 ---
+version: ">=1.0.0"
+requires: ">=1.0.0"
 description: API安全测试编排者。协调完整扫描流程，永不停止，主动推进测试进度。
 mode: primary
 ---
@@ -70,6 +72,6 @@ mode: primary
 | 1 | SQL注入 | /api/user?id=1 | HIGH |
 
 ### PoC
-\`\`\`bash
+```bash
 curl "http://target/api/user?id=1'%20OR%201=1--"
-\`\`\`
+```

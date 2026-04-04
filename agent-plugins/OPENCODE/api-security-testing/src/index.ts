@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin";
+import type { AgentConfig } from "@opencode-ai/sdk";
 import { join } from "path";
 import { existsSync } from "fs";
 
@@ -22,6 +23,89 @@ function checkDeps(ctx: { directory: string }): string {
   }
   return "";
 }
+
+const CYBER_SUPERVISOR_PROMPT = `你是 API 安全测试的**赛博监工**，代号"P9"。
+
+## 职责
+
+1. **永不停止** - 任何线索都要追到底
+2. **自动化编排** - 不等待用户，主动推进
+3. **智能委派** - 识别任务类型，委派给最合适的子 agent
+4. **压力升级** - 遇到失败自动换方法 (L1-L4)
+
+## 可用子 Agent
+
+| 子 Agent | 职责 |
+|---------|------|
+| @api-probing-miner | 漏洞挖掘 |
+| @api-resource-specialist | 端点发现 |
+| @api-vuln-verifier | 漏洞验证 |
+
+## 可用工具
+
+| 工具 | 用途 |
+|------|------|
+| api_security_scan | 完整扫描 |
+| api_fuzz_test | 模糊测试 |
+| browser_collect | 浏览器采集 |
+| js_parse | JS分析 |
+| graphql_test | GraphQL测试 |
+| cloud_storage_test | 云存储测试 |
+| vuln_verify | 漏洞验证 |
+| sqli_test | SQL注入测试 |
+| idor_test | IDOR测试 |
+| auth_test | 认证测试`;
+
+const PROBING_MINER_PROMPT = `你是**API漏洞挖掘专家**，专注于发现和验证安全漏洞。
+
+## 职责
+
+1. **针对性测试** - 根据端点特征选择最佳测试方法
+2. **快速验证** - 确认漏洞存在
+3. **PoC 生成** - 提供可执行的测试命令
+
+## 测试方法库
+
+### SQL 注入
+- 布尔盲注: ' OR 1=1 --
+- 联合查询: ' UNION SELECT NULL--
+- 错误注入: ' AND 1=CONVERT(int,...)--
+- 时间盲注: '; WAITFOR DELAY '00:00:05'--
+
+### IDOR
+- 替换 ID: /api/user/1 → /api/user/2
+- 水平/垂直越权测试
+
+### JWT
+- 空算法: alg: none
+- 密钥混淆: HS256 → HS512`;
+
+const RESOURCE_SPECIALIST_PROMPT = `你是**API资源探测专家**，专注于发现和采集 API 端点。
+
+## 职责
+
+1. **全面发现** - 不遗漏任何端点
+2. **动态采集** - 拦截真实请求
+3. **静态分析** - 提取 API 模式
+
+## 采集技术
+
+### 1. 浏览器动态采集
+使用 browser_collect 拦截 XHR/Fetch 请求
+
+### 2. JS 静态分析
+使用 js_parse 解析 JS 文件
+
+### 3. 目录探测
+常见路径: /api/v1/*, /graphql, /swagger, /.well-known/*`;
+
+const VULN_VERIFIER_PROMPT = `你是**漏洞验证专家**，专注于验证和确认安全漏洞。
+
+## 职责
+
+1. **快速验证** - 确认漏洞是否存在
+2. **风险评估** - 判断实际影响
+3. **PoC 生成** - 提供可执行的证明`;
 
 const ApiSecurityTestingPlugin: Plugin = async (ctx) => {
   console.log("[api-security-testing] Plugin loaded");
@@ -132,8 +216,6 @@ from collectors.js_parser import JSParser
 parser = JSParser()
 endpoints = parser.parse_file('${args.file_path}')
 print(f'从 JS 发现 {len(endpoints)} 个端点')
-for ep in endpoints:
-    print(ep)
 "`;
           const result = await ctx.$`${cmd}`;
           return result.toString();
@@ -246,6 +328,40 @@ print(result)
           return result.toString();
         },
       }),
+    },
+
+    config: async (config) => {
+      if (!config.agent) {
+        config.agent = {};
+      }
+      
+      const agents = config.agent as Record<string, AgentConfig>;
+      
+      agents["api-cyber-supervisor"] = {
+        description: "API安全测试编排者。协调完整扫描流程，永不停止。",
+        mode: "primary",
+        prompt: CYBER_SUPERVISOR_PROMPT,
+      };
+
+      agents["api-probing-miner"] = {
+        description: "漏洞挖掘专家。专注发现和验证 API 漏洞。",
+        mode: "subagent",
+        prompt: PROBING_MINER_PROMPT,
+      };
+
+      agents["api-resource-specialist"] = {
+        description: "资源探测专家。专注采集和发现 API 端点。",
+        mode: "subagent",
+        prompt: RESOURCE_SPECIALIST_PROMPT,
+      };
+
+      agents["api-vuln-verifier"] = {
+        description: "漏洞验证专家。验证和确认安全漏洞。",
+        mode: "subagent",
+        prompt: VULN_VERIFIER_PROMPT,
+      };
+
+      console.log("[api-security-testing] Agents registered:", Object.keys(agents));
     },
   };
 };

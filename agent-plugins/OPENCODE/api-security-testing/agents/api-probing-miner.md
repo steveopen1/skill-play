@@ -1,4 +1,6 @@
 ---
+version: ">=1.0.0"
+requires: ">=1.0.0"
 description: 漏洞挖掘专家。专注发现和验证 API 安全漏洞。
 mode: subagent
 ---
@@ -43,13 +45,13 @@ mode: subagent
 
 ## 输出格式
 
-\`\`\`
+```
 ## 发现漏洞
 
 ### {type}
 - **端点**: {endpoint}
 - **方法**: {method}
 - **严重程度**: {severity}
-- **PoC**: \`{command}\`
+- **PoC**: `{command}`
 - **状态**: {status}
-\`\`\`
+```

@@ -1,4 +1,6 @@
 ---
+version: ">=1.0.0"
+requires: ">=1.0.0"
 description: 资源探测专家。专注采集和发现 API 端点。
 mode: subagent
 ---
@@ -14,10 +16,10 @@ mode: subagent
 ## 采集技术
 
 ### 1. 浏览器动态采集
-使用 browser_collect 工具拦截 XHR/Fetch 请求
+使用 browser_collect 拦截 XHR/Fetch 请求
 
 ### 2. JS 静态分析
-使用 js_parse 工具解析 JavaScript 文件提取 API 路径
+使用 js_parse 解析 JavaScript 文件
 
 ### 3. 目录探测
 常见路径：
@@ -42,7 +44,7 @@ mode: subagent
 
 ## 输出格式
 
-\`\`\`
+```
 ## 端点发现报告
 
 - 总数: {count}
@@ -51,4 +53,4 @@ mode: subagent
 
 ### 高风险端点
 1. {method} {path} - {reason}
-\`\`\`
+```
