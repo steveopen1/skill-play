@@ -1,6 +1,8 @@
 ---
 name: api-security-testing
 description: 全自动 API 安全测试插件 - Playwright JS采集、API发现、漏洞检测、报告生成，内置赛博监工持续监督循环执行。Triggers on: API安全测试、漏洞扫描、渗透测试、API检测。
+license: MIT
+compatibility: opencode
 ---
 
 ## API Security Testing - API 安全测试
