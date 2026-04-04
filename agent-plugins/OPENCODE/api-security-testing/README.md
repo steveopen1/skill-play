@@ -6,19 +6,19 @@
 
 ### 方式一：复制到项目 .opencode 目录
 ```bash
-cp -r api-security-testing <your-project>/.opencode/
+# 将插件内容复制到 .opencode/ 目录（不是嵌套目录）
+cp -r api-security-testing/* <your-project>/.opencode/
 ```
 
 ### 方式二：复制到全局配置
 ```bash
-cp -r api-security-testing ~/.config/opencode/
+cp -r api-security-testing/* ~/.config/opencode/
 ```
 
-### 方式三：克隆仓库
+### 方式三：Marketplace 安装（如支持）
 ```bash
-git clone https://github.com/steveopen1/skill-play.git
-cd skill-play/agent-plugins/OPENCODE
-cp -r api-security-testing ~/.config/opencode/
+/plugin marketplace add https://github.com/steveopen1/skill-play
+/plugin install api-security-testing
 ```
 
 ## 使用方法
@@ -41,29 +41,40 @@ python3 core/deep_api_tester_v55.py https://target.com output.md
 
 ## 目录结构
 
+插件目录结构符合 OpenCode 规范：
+
 ```
-api-security-testing/              # 插件根目录
-├── skills/                       # Skills 目录
-│   └── api-security-testing/     # Skill 子目录
+api-security-testing/
+├── skills/                       # Skills（直接可用）
+│   └── api-security-testing/     # Skill 名称
 │       └── SKILL.md             # Skill 定义
-├── commands/                     # Commands 目录
-│   └── *.md                     # Command 文件
-├── plugins/                      # Plugins 目录
-│   └── cyber-supervisor.js      # 赛博监工插件
-├── agents/                       # Agents 目录
-│   ├── cyber-supervisor.md      # 赛博监工 Agent
+├── agents/                       # Agents（通过 @ 调用）
+│   ├── cyber-supervisor.md      # 赛博监工
 │   ├── probing-miner.md        # 探测挖掘专家
 │   └── resource-specialist.md   # 资源探测专家
+├── plugins/                      # Plugins（自动加载）
+│   └── cyber-supervisor.js      # 赛博监工插件
+├── commands/                     # Commands（/ 命令）
+│   └── *.md
 ├── core/                         # Python 测试引擎
-│   ├── deep_api_tester_v55.py  # API 深度测试
-│   ├── browser_tester.py       # 浏览器测试
-│   ├── collectors/             # 采集器
-│   ├── analyzers/              # 分析器
-│   └── cloud_storage_tester.py # 云存储测试
 ├── references/                   # 参考文档
-│   └── vulnerabilities/        # 漏洞测试 (12个)
-├── opencode.json               # 插件配置
-└── README.md
+└── opencode.json               # 配置
+```
+
+安装后 `.opencode/` 目录结构：
+
+```
+.opencode/
+├── skills/
+│   └── api-security-testing/
+│       └── SKILL.md
+├── agents/
+│   ├── cyber-supervisor.md
+│   ├── probing-miner.md
+│   └── resource-specialist.md
+├── plugins/
+│   └── cyber-supervisor.js
+└── opencode.json
 ```
 
 ## 功能特性
