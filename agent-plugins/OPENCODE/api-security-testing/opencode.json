@@ -7,16 +7,44 @@
   },
   "agent": {
     "cyber-supervisor": {
-      "description": "API安全测试的赛博监工",
+      "description": "API安全测试的赛博监工。永不停止任何线索，自动循环执行，遇到失败自动委派 @probing-miner 和 @resource-specialist 进行探测。引用 skill 和漏洞测试指南进行专业监督。",
       "mode": "subagent"
     },
     "probing-miner": {
-      "description": "探测挖掘专家（端点探测+漏洞挖掘）",
+      "description": "探测挖掘专家（端点探测+漏洞挖掘）。参考 oh-my-openagent 的 Hephaestus 深度工作模式，使用 Playwright 强制采集，引用 skill 和漏洞测试指南进行专业测试。",
       "mode": "subagent"
     },
     "resource-specialist": {
-      "description": "资源探测专家（JS采集、敏感信息挖掘）",
+      "description": "资源探测专家（JS采集、敏感信息挖掘）。参考 oh-my-openagent 的 Hephaestus 深度工作模式，强制使用 Playwright 无头浏览器采集动态内容。",
       "mode": "subagent"
+    }
+  },
+  "command": {
+    "api-security-testing": {
+      "description": "API 安全测试主命令。执行完整的安全测试流程，包括 JS 采集、端点发现、漏洞检测。",
+      "path": ".opencode/commands/api-security-testing.md"
+    },
+    "api-security-testing-scan": {
+      "description": "完整扫描目标 API，发现端点并检测漏洞。",
+      "path": ".opencode/commands/api-security-testing-scan.md"
+    },
+    "api-security-testing-test": {
+      "description": "快速测试特定端点的安全性。",
+      "path": ".opencode/commands/api-security-testing-test.md"
+    },
+    "api-security-testing-hook": {
+      "description": "赛博监工控制命令。开启/关闭/查看监督状态。",
+      "path": ".opencode/commands/api-security-testing-hook.md"
+    },
+    "api-security-testing-status": {
+      "description": "查看当前测试进度和发现的安全问题。",
+      "path": ".opencode/commands/api-security-testing-status.md"
+    }
+  },
+  "plugin": {
+    "cyber-supervisor": {
+      "description": "赛博监工 Hook 插件。自动监督 API 安全测试进度，失败时触发压力升级。",
+      "path": ".opencode/plugins/cyber-supervisor.js"
     }
   }
 }

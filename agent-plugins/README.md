@@ -7,8 +7,7 @@
 ```
 agent-plugins/
 ├── CLAUDE-CODE/                     # Claude Code 插件
-├── OPENCODE/                        # OpenCode 插件
-└── opencode/                       # OpenCode 插件 (旧)
+└── OPENCODE/                        # OpenCode 插件
 ```
 
 ## Claude Code 插件
@@ -39,6 +38,7 @@ cp -r agent-plugins/CLAUDE-CODE/api-security-testing ~/.claude/plugins/
 - **Hooks 自动监测** - PostToolUse, PostToolUseFailure, Stop
 - **赛博监工 Agent** - 自主压力升级 (L1-L4)
 - **6 阶段测试流程** - JS采集 → API发现 → 漏洞检测 → 利用链 → 报告
+- **参考 oh-my-openagent** 的 Sisyphus orchestration 模式
 
 ---
 
@@ -49,11 +49,8 @@ cp -r agent-plugins/CLAUDE-CODE/api-security-testing ~/.claude/plugins/
 ### 安装
 
 ```bash
-# 复制到项目
-cp -r agent-plugins/OPENCODE/api-security-testing <project>/.opencode/
-
-# 或复制到全局
-cp -r agent-plugins/OPENCODE/api-security-testing ~/.config/opencode/
+# 复制到项目 .opencode 目录
+cp -r OPENCODE/api-security-testing <project>/.opencode/
 ```
 
 ### 命令
@@ -68,9 +65,41 @@ cp -r agent-plugins/OPENCODE/api-security-testing ~/.config/opencode/
 
 ### 特点
 
-- **Plugins 自动监测** - session.created, tool.execute.after
-- **赛博监工** - 自动激活，无需手动开启
+- **Plugin Hook 机制** - session.created, tool.execute.after, session.idle
+- **Task.launch 委派** - 真正的 agent spawn，不是简单的 @提及
+- **参考 oh-my-openagent** 的 Hephaestus 深度工作模式
+- **强制 Playwright** - 无头浏览器动态内容采集
 - **Skills 目录结构** - `.opencode/skills/*/SKILL.md`
+
+---
+
+## 架构模式
+
+### Agent 角色
+
+| Agent | 模式参考 | 职责 |
+|-------|---------|------|
+| cyber-supervisor | oh-my-openagent/Sisyphus | 主协调器，Task.launch 委派子 agent |
+| probing-miner | oh-my-openagent/Hephaestus | 深度漏洞挖掘，攻击链构造 |
+| resource-specialist | oh-my-openagent/Hephaestus | 资源采集，Playwright 强制使用 |
+
+### Task.launch 委派
+
+cyber-supervisor 使用 Task.launch 真正 spawn 子 agent：
+
+```javascript
+// 委派资源采集
+await Task.launch("resource-specialist", {
+  description: "采集目标 JS 文件",
+  prompt: `目标: ${targetUrl}\n使用 Playwright 无头浏览器采集动态内容。`
+})
+
+// 委派漏洞挖掘
+await Task.launch("probing-miner", {
+  description: "挖掘 SQL 注入",
+  prompt: `端点: ${endpoint}\n参考漏洞指南进行针对性测试。`
+})
+```
 
 ---
 
@@ -81,9 +110,9 @@ cp -r agent-plugins/OPENCODE/api-security-testing ~/.config/opencode/
 | 失败次数 | 等级 | 动作 |
 |---------|------|------|
 | 2次 | L1 | 切换方法 |
-| 3次 | L2 | 深度分析 |
-| 5次 | L3 | 7点检查清单 |
-| 7次+ | L4 | 绝望模式 |
+| 3次 | L2 | Task.launch 委派 resource-specialist 重新采集 |
+| 5次 | L3 | Task.launch 委派 probing-miner 针对性挖掘 |
+| 7次+ | L4 | 组合委派两个 agent |
 
 ---
 
