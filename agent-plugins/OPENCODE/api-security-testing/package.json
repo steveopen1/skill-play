@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "API Security Testing Plugin for OpenCode",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "index.ts",
   "dependencies": {
     "@opencode-ai/plugin": "^1.1.19",
     "@opencode-ai/sdk": "^1.1.19"
