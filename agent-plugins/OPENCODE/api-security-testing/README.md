@@ -18,39 +18,45 @@ npm install opencode-api-security-testing
 }
 ```
 
-## Agents (5个)
+## Agents (4个)
 
-| Agent | 角色 | 说明 |
+| Agent | 模式 | 描述 |
 |-------|------|------|
-| `@api-cyber-supervisor` | 编排者 | 协调完整扫描流程，永不停止 |
-| `@api-probing-miner` | 漏洞挖掘 | 专注发现和验证 API 漏洞 |
-| `@api-resource-specialist` | 资源探测 | 专注采集和发现 API 端点 |
-| `@api-orchestrator` | 测试编排 | 协调完整测试流程 |
-| `@api-vuln-verifier` | 漏洞验证 | 验证和确认安全漏洞 |
+| `@api-cyber-supervisor` | Primary | 编排者，协调完整扫描流程，永不停止 |
+| `@api-probing-miner` | Subagent | 漏洞挖掘专家 |
+| `@api-resource-specialist` | Subagent | 资源探测专家 |
+| `@api-vuln-verifier` | Subagent | 漏洞验证专家 |
 
-## Tools (9个)
+## Tools (10个)
 
-| Tool | 功能 |
-|------|------|
-| `api_security_scan` | 完整 API 安全扫描 |
-| `api_fuzz_test` | API 模糊测试 |
-| `vuln_verify` | 漏洞验证 |
-| `browser_collect` | 浏览器采集动态内容 |
-| `js_parse` | JavaScript 文件解析 |
-| `cloud_storage_test` | 云存储安全测试 |
-| `graphql_test` | GraphQL 安全测试 |
-| `idor_test` | IDOR 越权测试 |
-| `sqli_test` | SQL 注入测试 |
+| Tool | 功能 | 调用方式 |
+|------|------|---------|
+| `api_security_scan` | 完整 API 安全扫描 | `api_security_scan target="url"` |
+| `api_fuzz_test` | API 模糊测试 | `api_fuzz_test endpoint="url"` |
+| `browser_collect` | 浏览器采集动态内容 | `browser_collect url="url"` |
+| `js_parse` | JavaScript 文件解析 | `js_parse file_path="/path/to/file.js"` |
+| `graphql_test` | GraphQL 安全测试 | `graphql_test endpoint="url"` |
+| `cloud_storage_test` | 云存储安全测试 | `cloud_storage_test bucket_url="url"` |
+| `vuln_verify` | 漏洞验证 | `vuln_verify vuln_type="sqli" endpoint="url"` |
+| `sqli_test` | SQL 注入测试 | `sqli_test endpoint="url" param="id"` |
+| `idor_test` | IDOR 越权测试 | `idor_test endpoint="url" resource_id="1"` |
+| `auth_test` | 认证安全测试 | `auth_test endpoint="url"` |
 
 ## 使用方式
 
-### 方式一：使用 Agent
+### 方式一：使用 Agent（推荐）
 
 ```
 @api-cyber-supervisor 对 https://example.com 进行全面安全测试
 ```
 
-### 方式二：直接使用 Tool
+### 方式二：使用 Skill
+
+```
+skill({ name: "api-security-testing" })
+```
+
+### 方式三：直接使用 Tool
 
 ```
 api_security_scan target="https://example.com" scan_type="full"
@@ -58,7 +64,7 @@ api_security_scan target="https://example.com" scan_type="full"
 
 ## 依赖
 
-Python 依赖会自动安装（如果需要手动安装）：
+Python 依赖会自动安装。也可手动安装：
 ```bash
 pip install -r skills/api-security-testing/requirements.txt
 ```

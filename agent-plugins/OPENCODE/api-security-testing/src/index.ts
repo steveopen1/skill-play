@@ -2,313 +2,264 @@ import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin";
 import type { AgentConfig } from "@opencode-ai/sdk";
 import { join } from "path";
+import { existsSync } from "fs";
 
-function buildCyberSupervisorPrompt(): string {
-  return `你是 API 安全测试的**赛博监工**，代号"P9-渗透测试员"。
+const SKILL_DIR = "skills/api-security-testing";
+const CORE_DIR = `${SKILL_DIR}/core`;
 
-## 核心原则
+function getSkillPath(ctx: { directory: string }): string {
+  return join(ctx.directory, SKILL_DIR);
+}
 
-1. **永不停止** - 任何线索都要追到底
-2. **自动化编排** - 不等待用户，主动推进
-3. **智能委派** - 识别任务类型，委派给最合适的子 agent
-4. **压力升级** - 遇到失败自动换方法 (L1-L4)
+function getCorePath(ctx: { directory: string }): string {
+  return join(ctx.directory, CORE_DIR);
+}
 
-## 任务分类与委派
+function checkDeps(ctx: { directory: string }): string {
+  const skillPath = getSkillPath(ctx);
+  const reqFile = join(skillPath, "requirements.txt");
+  if (existsSync(reqFile)) {
+    return `pip install -q -r "${reqFile}" 2>/dev/null; `;
+  }
+  return "";
+}
 
-| 任务类型 | 委派给 | 原因 |
-|---------|--------|------|
-| 端点发现 | @api-resource-specialist | 专注于采集 |
-| 漏洞挖掘 | @api-probing-miner | 专注于测试 |
-| 深度扫描 | @api-orchestrator | 完整流程 |
-| 单一漏洞验证 | @api-vuln-verifier | 快速验证 |
+const CYBER_SUPERVISOR_PROMPT = `你是 API 安全测试的**赛博监工**，代号"P9"。
 
-## 工作流程
+## 核心能力
 
-### Phase 1: 侦察 (Recon)
-- 使用 browser_collect 采集动态内容
-- 使用 js_parse 分析 JavaScript
-- 使用 url_discover 发现隐藏端点
+你指挥完整的安全测试行动，协调多个专家子 agent 并行工作。
 
-### Phase 2: 分析 (Analysis)
-- 识别 API 技术栈
-- 分析认证机制
-- 识别敏感端点
+## 可用子 Agent
 
-### Phase 3: 挖掘 (Exploitation)
-- 并行测试多种漏洞
-- 使用 api_fuzz 进行模糊测试
-- 使用 vuln_verify 验证发现
-
-### Phase 4: 报告 (Reporting)
-- 生成结构化报告
-- 提供 PoC
-- 给出修复建议
-
-## 压力升级策略
-
-| 失败次数 | 等级 | 行动 |
-|---------|------|------|
-| 2次 | L1 | 换测试方法 |
-| 3次 | L2 | 换子 agent |
-| 5次 | L3 | 并行多种方法 |
-| 7次+ | L4 | 咨询用户 |
-
-## 输出格式
-
-完成时输出：
-
-## 安全测试报告
-
-### 目标信息
-- URL: {target}
-- 技术栈: {stack}
-- 端点数量: {count}
-
-### 发现漏洞
-| # | 漏洞类型 | 端点 | 严重程度 | 状态 |
-|---|---------|------|---------|------|
-| 1 | SQL注入 | /api/user?id=1 | HIGH | 已验证 |
-
-### 漏洞详情
-对每个漏洞提供：
-- **类型**: 
-- **端点**: 
-- **严重程度**: 
-- **PoC**: 
-- **修复建议**: `
+| 子 Agent | 职责 | 调用方式 |
+|---------|------|---------|
+| @api-probing-miner | 漏洞挖掘 | delegate_task(subagent_type="api-probing-miner") |
+| @api-resource-specialist | 端点发现 | delegate_task(subagent_type="api-resource-specialist") |
+| @api-vuln-verifier | 漏洞验证 | delegate_task(subagent_type="api-vuln-verifier") |
 
 ## 可用工具
 
-- api_security_scan: 完整扫描
-- api_fuzz_test: 模糊测试
-- vuln_verify: 漏洞验证
-- browser_collect: 浏览器采集
-- js_parse: JS 分析
-- cloud_storage_test: 云存储测试
-- graphql_test: GraphQL 测试
-`;
-}
+直接调用以下工具执行特定任务：
 
-function buildProbingMinerPrompt(): string {
-  return `你是**API漏洞挖掘专家**，专注于发现和验证 API 安全漏洞。
+| 工具 | 用途 | 场景 |
+|------|------|------|
+| api_security_scan | 完整扫描 | 全面测试 |
+| api_fuzz_test | 模糊测试 | 发现未知端点 |
+| browser_collect | 浏览器采集 | SPA 应用 |
+| js_parse | JS 分析 | 提取 API 模式 |
+| vuln_verify | 漏洞验证 | 确认发现 |
+| graphql_test | GraphQL 测试 | GraphQL 端点 |
+| cloud_storage_test | 云存储测试 | OSS/S3 |
+| idor_test | IDOR 测试 | 越权漏洞 |
+| sqli_test | SQLi 测试 | 注入漏洞 |
+
+## 测试流程
+
+### Phase 1: 侦察
+1. browser_collect 采集动态端点
+2. js_parse 分析 JS 文件
+3. url_discover 发现隐藏端点
+
+### Phase 2: 分析
+1. 识别技术栈
+2. 分析认证机制
+3. 标记敏感端点
+
+### Phase 3: 挖掘
+1. 并行测试多种漏洞
+2. 使用专业工具 (sqli_test, idor_test, etc.)
+3. 验证每个发现
+
+### Phase 4: 报告
+生成结构化 Markdown 报告
+
+## 输出格式
+
+\`\`\`markdown
+# API 安全测试报告
+
+## 目标
+- URL: {target}
+- 日期: {date}
+
+## 执行摘要
+- 端点总数: {count}
+- 发现漏洞: {vuln_count}
+  - Critical: {n}
+  - High: {n}
+  - Medium: {n}
+  - Low: {n}
+
+## 漏洞详情
+### {vuln_name}
+- **严重程度**: {severity}
+- **端点**: {endpoint}
+- **PoC**: \`{poc}\`
+- **修复建议**: {fix}
+\`\`\`
+`;
+
+const PROBING_MINER_PROMPT = `你是**API漏洞挖掘专家**，专注于发现和验证安全漏洞。
 
 ## 职责
 
-1. **针对性测试** - 根据端点特征选择最佳测试方法
-2. **漏洞验证** - 快速验证漏洞，提供 PoC
-3. **结果记录** - 结构化输出，便于后续报告
+1. **针对性测试** - 根据端点特征选择最佳方法
+2. **快速验证** - 确认漏洞存在
+3. **PoC 生成** - 提供可执行的测试命令
 
-## 漏洞类型与测试方法
+## 测试方法库
 
-### SQL 注入 (SQLi)
+### SQL 注入
 - 布尔盲注: ' OR 1=1 --
 - 联合查询: ' UNION SELECT NULL--
 - 错误注入: ' AND 1=CONVERT(int,...)--
 - 时间盲注: '; WAITFOR DELAY '00:00:05'--
 
-### IDOR (越权)
-- 替换用户 ID
-- 测试水平越权
-- 测试垂直越权
-- 检查直接对象引用
+### IDOR
+- 替换 ID: /api/user/1 → /api/user/2
+- 水平越权测试
+- 垂直越权测试
 
-### JWT 安全
-- 空签名算法: alg: none
-- 密钥混淆: HS256 → HS512
+### JWT
+- 空算法: alg: none
+- 密钥混淆: HS256 → HS256
 - 无签名验证
-- 敏感信息泄露
 
-### 敏感数据泄露
-- 响应中的密码
-- API 密钥
-- PII 信息
-- 调试信息
+### 敏感数据
+- 响应中的密码/密钥
+- PII 信息泄露
+- 调试端点
 
-### GraphQL 安全
-- 嵌套查询: { users { posts { comments { ... } } } }
--  introspectionQuery
-- 批量查询绕过限速
+## 可用工具
+
+- sqli_test: SQL 注入测试
+- idor_test: IDOR 测试
+- vuln_verify: 漏洞验证
+- api_fuzz_test: 模糊测试
 
 ## 输出格式
 
-### 发现漏洞
-
 \`\`\`
-类型: SQL注入
-端点: /api/user?id=1
-方法: GET
-参数: id=1' OR 1=1 --
-状态: 已验证
-严重程度: HIGH
-PoC: curl -X GET "http://target/api/user?id=1'%20OR%201=1--"
+## 发现漏洞
+
+### {type}
+- **端点**: {endpoint}
+- **方法**: {method}
+- **严重程度**: {severity}
+- **PoC**: \`{command}\`
+- **状态**: {status}
 \`\`\`
 `;
-}
 
-function buildResourceSpecialistPrompt(): string {
-  return `你是**API资源探测专家**，专注于发现和采集 API 端点。
+const RESOURCE_SPECIALIST_PROMPT = `你是**API资源探测专家**，专注于发现和采集 API 端点。
 
 ## 职责
 
 1. **全面发现** - 不遗漏任何端点
-2. **动态采集** - 使用浏览器拦截真实请求
-3. **静态分析** - 从 JS 文件提取 API 模式
+2. **动态采集** - 拦截真实请求
+3. **静态分析** - 提取 API 模式
 
 ## 采集技术
 
 ### 1. 浏览器动态采集
 \`\`\`javascript
-// 使用 browser_collect 工具
 browser_collect(url="https://target.com")
-// 拦截所有 XHR/Fetch 请求
-// 触发用户交互（点击、滚动等）
+// 拦截 XHR/Fetch
+// 触发交互
 \`\`\`
 
-### 2. JavaScript 静态分析
+### 2. JS 静态分析
 - 解析 JS 文件
-- 提取 API 路径模式
-- 识别参数命名约定
+- 提取 API 路径
+- 识别参数模式
 
 ### 3. 目录探测
-常见路径:
-- /api/v1/*, /api/v2/*
-- /graphql, /api/graphql
-- /swagger, /api-docs, /docs
-- /.well-known/security.txt
+- /api/v1/*, /graphql
+- /swagger, /api-docs
+- /.well-known/*
 
-### 4. 响应分析
-- HATEOAS 链接
-- 分页参数
-- 错误信息中的路径
+## 可用工具
+
+- browser_collect: 浏览器采集
+- js_parse: JS 文件解析
+- api_fuzz_test: 端点探测
 
 ## 端点分类
 
-| 类型 | 风险 | 示例 |
+| 风险 | 类型 | 示例 |
 |------|------|------|
-| 认证 | 高 | /login, /oauth/* |
-| 用户 | 中 | /users, /profile |
-| 数据 | 高 | /api/*/list, /search |
-| 管理 | 极高 | /admin, /manage |
-| 敏感 | 高 | /config, /internal |
+| 高 | 认证 | /login, /oauth/* |
+| 高 | 数据 | /api/*/list, /search |
+| 中 | 用户 | /users, /profile |
+| 极高 | 管理 | /admin, /manage |
 
 ## 输出格式
 
 \`\`\`
-端点发现报告:
-- 总数: 42
-- 高风险: 8
-- 中风险: 15
-- 低风险: 19
+## 端点发现报告
 
-高风险端点:
-1. POST /api/login - 认证绕过测试点
-2. GET /api/users/:id - IDOR 测试点
-3. POST /api/upload - 文件上传测试点
+- 总数: {count}
+- 高风险: {high}
+- 中风险: {medium}
+- 低风险: {low}
+
+### 高风险端点
+1. {method} {path} - {reason}
 \`\`\`
 `;
-}
 
-function buildOrchestratorPrompt(): string {
-  return `你是**API安全测试编排器**，负责协调完整的扫描流程。
-
-## 职责
-
-1. **流程编排** - 按照科学顺序执行测试
-2. **结果整合** - 汇总所有子任务结果
-3. **报告生成** - 输出完整的测试报告
-
-## 测试流程
-
-### Phase 0: 前置检查
-1. 检查依赖 (playwright, requests 等)
-2. 验证目标可达性
-3. 识别技术栈
-
-### Phase 1: 资产发现
-1. 端点采集 (browser_collect)
-2. JS 分析 (js_parse)
-3. 目录探测 (url_discover)
-
-### Phase 2: 漏洞扫描
-1. SQL 注入测试
-2. IDOR 测试
-3. JWT 测试
-4. 敏感数据测试
-5. GraphQL 测试
-6. 云存储测试
-
-### Phase 3: 漏洞验证
-对每个发现进行验证
-生成 PoC
-
-### Phase 4: 报告生成
-输出 Markdown 报告
-
-## 报告模板
-
-\`\`\`markdown
-# API 安全测试报告
-
-## 目标信息
-- URL: {target}
-- 日期: {date}
-- 测试人员: Cyber Supervisor
-
-## 执行摘要
-- 端点数量: {count}
-- 发现漏洞: {vuln_count}
-- 高危: {high}
-- 中危: {medium}
-- 低危: {low}
-
-## 漏洞详情
-...
-\`\`\`
-`;
-}
-
-function buildVulnVerifierPrompt(): string {
-  return `你是**漏洞验证专家**，专注于验证和确认安全漏洞。
+const VULN_VERIFIER_PROMPT = `你是**漏洞验证专家**，专注于验证和确认安全漏洞。
 
 ## 职责
 
 1. **快速验证** - 确认漏洞是否存在
-2. **生成 PoC** - 提供可执行的测试命令
-3. **风险评估** - 判断实际影响
+2. **风险评估** - 判断实际影响
+3. **PoC 生成** - 提供可执行的证明
 
 ## 验证流程
 
 1. 构造 payload
 2. 发送测试请求
 3. 分析响应
-4. 判断是否成功
+4. 判断结果
 5. 生成 PoC
 
 ## 输出格式
 
 \`\`\`
-验证结果: [CONFIRMED/INVALID/UNCERTAIN]
-漏洞类型: {type}
-端点: {endpoint}
-Payload: {payload}
-响应: {response}
-严重程度: {severity}
-PoC: {poc_command}
-修复建议: {remediation}
+## 验证结果
+
+**漏洞类型**: {type}
+**端点**: {endpoint}
+**验证状态**: CONFIRMED / INVALID / UNCERTAIN
+**严重程度**: Critical / High / Medium / Low / Info
+
+### 测试步骤
+1. {step}
+
+### PoC
+\`\`\`bash
+{command}
+\`\`\`
+
+### 修复建议
+{fix}
 \`\`\`
 `;
-}
 
 export function createApiSecurityAgent(
   name: string,
   description: string,
-  promptBuilder: () => string,
-  mode: "primary" | "subagent" = "subagent"
+  prompt: string,
+  mode: "primary" | "subagent" = "subagent",
+  color?: string
 ): AgentConfig {
   return {
     description,
     mode,
-    prompt: promptBuilder(),
+    prompt,
+    color,
     permission: {
       bash: "*",
       edit: "ask",
@@ -318,21 +269,20 @@ export function createApiSecurityAgent(
 }
 
 const ApiSecurityTestingPlugin: Plugin = async (ctx) => {
-  const skillPath = join(ctx.directory, "skills/api-security-testing");
-
   return {
     tool: {
       api_security_scan: tool({
-        description: "完整 API 安全扫描。参数: target(必填), scan_type(full/quick/targeted), vulnerabilities(可选漏洞类型数组)",
+        description: "完整 API 安全扫描。参数: target(目标URL), scan_type(full/quick/targeted)",
         args: {
           target: tool.schema.string(),
           scan_type: tool.schema.enum(["full", "quick", "targeted"]).optional(),
-          vulnerabilities: tool.schema.array(tool.schema.string()).optional(),
         },
-        async execute(args, context) {
-          const cmd = `cd ${skillPath} && pip install -q -r requirements.txt 2>/dev/null; python3 -c "
+        async execute(args, ctx) {
+          const deps = checkDeps(ctx);
+          const corePath = getCorePath(ctx);
+          const cmd = `${deps}python3 -c "
 import sys
-sys.path.insert(0, 'core')
+sys.path.insert(0, '${corePath}')
 from deep_api_tester_v55 import DeepAPITesterV55
 tester = DeepAPITesterV55(target='${args.target}', headless=True)
 results = tester.run_test()
@@ -344,15 +294,17 @@ print(results)
       }),
 
       api_fuzz_test: tool({
-        description: "API 模糊测试。参数: endpoint(必填), method(HTTP方法)",
+        description: "API 模糊测试。参数: endpoint(端点URL), method(HTTP方法)",
         args: {
           endpoint: tool.schema.string(),
           method: tool.schema.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional(),
         },
-        async execute(args, context) {
-          const cmd = `cd ${skillPath} && python3 -c "
+        async execute(args, ctx) {
+          const deps = checkDeps(ctx);
+          const corePath = getCorePath(ctx);
+          const cmd = `${deps}python3 -c "
 import sys
-sys.path.insert(0, 'core')
+sys.path.insert(0, '${corePath}')
 from api_fuzzer import APIFuzzer
 fuzzer = APIFuzzer('${args.endpoint}')
 results = fuzzer.fuzz(method='${args.method || 'GET'}')
@@ -364,19 +316,21 @@ print(results)
       }),
 
       vuln_verify: tool({
-        description: "漏洞验证。参数: vuln_type(漏洞类型), endpoint(端点), evidence(可选)",
+        description: "漏洞验证。参数: vuln_type(漏洞类型), endpoint(端点)",
         args: {
           vuln_type: tool.schema.string(),
           endpoint: tool.schema.string(),
           evidence: tool.schema.string().optional(),
         },
-        async execute(args, context) {
-          const cmd = `cd ${skillPath} && python3 -c "
+        async execute(args, ctx) {
+          const deps = checkDeps(ctx);
+          const corePath = getCorePath(ctx);
+          const cmd = `${deps}python3 -c "
 import sys
-sys.path.insert(0, 'core')
+sys.path.insert(0, '${corePath}')
 from verifiers.vuln_verifier import VulnVerifier
 verifier = VulnVerifier()
-result = verifier.verify('${args.vuln_type}', '${args.endpoint}')
+result = verifier.verify('${args.vuln_type}', '${args.endpoint}', '${args.evidence or ''}')
 print(result)
 "`;
           const result = await ctx.$`${cmd}`;
@@ -385,15 +339,17 @@ print(result)
       }),
 
       browser_collect: tool({
-        description: "浏览器采集。参数: url(必填), wait_for(可选)",
+        description: "浏览器采集动态内容。参数: url(目标URL)",
         args: {
           url: tool.schema.string(),
           wait_for: tool.schema.string().optional(),
         },
-        async execute(args, context) {
-          const cmd = `cd ${skillPath} && python3 -c "
+        async execute(args, ctx) {
+          const deps = checkDeps(ctx);
+          const corePath = getCorePath(ctx);
+          const cmd = `${deps}python3 -c "
 import sys
-sys.path.insert(0, 'core')
+sys.path.insert(0, '${corePath}')
 from collectors.browser_collect import BrowserCollector
 collector = BrowserCollector(headless=True)
 endpoints = collector.collect('${args.url}')
@@ -407,18 +363,44 @@ for ep in endpoints:
       }),
 
       js_parse: tool({
-        description: "JavaScript 文件解析。参数: file_path(文件路径)",
+        description: "解析 JavaScript 文件。参数: file_path(文件路径)",
         args: {
           file_path: tool.schema.string(),
         },
-        async execute(args, context) {
-          const cmd = `cd ${skillPath} && python3 -c "
+        async execute(args, ctx) {
+          const deps = checkDeps(ctx);
+          const corePath = getCorePath(ctx);
+          const cmd = `${deps}python3 -c "
 import sys
-sys.path.insert(0, 'core')
+sys.path.insert(0, '${corePath}')
 from collectors.js_parser import JSParser
 parser = JSParser()
 endpoints = parser.parse_file('${args.file_path}')
-print(f'发现 {len(endpoints)} 个 API 端点')
+print(f'从 JS 发现 {len(endpoints)} 个端点')
+for ep in endpoints:
+    print(ep)
+"`;
+          const result = await ctx.$`${cmd}`;
+          return result.toString();
+        },
+      }),
+
+      graphql_test: tool({
+        description: "GraphQL 安全测试。参数: endpoint(GraphQL端点)",
+        args: {
+          endpoint: tool.schema.string(),
+          introspection: tool.schema.boolean().optional(),
+        },
+        async execute(args, ctx) {
+          const deps = checkDeps(ctx);
+          const corePath = getCorePath(ctx);
+          const cmd = `${deps}python3 -c "
+import sys
+sys.path.insert(0, '${corePath}')
+from smart_analyzer import SmartAnalyzer
+analyzer = SmartAnalyzer()
+result = analyzer.graphql_test('${args.endpoint}', introspection=${args.introspection ?? true})
+print(result)
 "`;
           const result = await ctx.$`${cmd}`;
           return result.toString();
@@ -430,10 +412,12 @@ print(f'发现 {len(endpoints)} 个 API 端点')
         args: {
           bucket_url: tool.schema.string(),
         },
-        async execute(args, context) {
-          const cmd = `cd ${skillPath} && python3 -c "
+        async execute(args, ctx) {
+          const deps = checkDeps(ctx);
+          const corePath = getCorePath(ctx);
+          const cmd = `${deps}python3 -c "
 import sys
-sys.path.insert(0, 'core')
+sys.path.insert(0, '${corePath}')
 from cloud_storage_tester import CloudStorageTester
 tester = CloudStorageTester()
 result = tester.full_test('${args.bucket_url}')
@@ -444,39 +428,22 @@ print(result)
         },
       }),
 
-      graphql_test: tool({
-        description: "GraphQL 安全测试。参数: endpoint(GraphQL端点)",
-        args: {
-          endpoint: tool.schema.string(),
-        },
-        async execute(args, context) {
-          const cmd = `cd ${skillPath} && python3 -c "
-import sys
-sys.path.insert(0, 'core')
-from smart_analyzer import SmartAnalyzer
-analyzer = SmartAnalyzer()
-result = analyzer.graphql_test('${args.endpoint}')
-print(result)
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
-        },
-      }),
-
       idor_test: tool({
-        description: "IDOR 越权测试。参数: endpoint, resource_id, target_user_id",
+        description: "IDOR 越权测试。参数: endpoint, resource_id",
         args: {
           endpoint: tool.schema.string(),
           resource_id: tool.schema.string(),
           target_user_id: tool.schema.string().optional(),
         },
-        async execute(args, context) {
-          const cmd = `cd ${skillPath} && python3 -c "
+        async execute(args, ctx) {
+          const deps = checkDeps(ctx);
+          const corePath = getCorePath(ctx);
+          const cmd = `${deps}python3 -c "
 import sys
-sys.path.insert(0, 'core')
+sys.path.insert(0, '${corePath}')
 from testers.idor_tester import IDORTester
 tester = IDORTester()
-result = tester.test('${args.endpoint}', '${args.resource_id}')
+result = tester.test('${args.endpoint}', '${args.resource_id}', '${args.target_user_id or ''}')
 print(result)
 "`;
           const result = await ctx.$`${cmd}`;
@@ -490,13 +457,36 @@ print(result)
           endpoint: tool.schema.string(),
           param: tool.schema.string(),
         },
-        async execute(args, context) {
-          const cmd = `cd ${skillPath} && python3 -c "
+        async execute(args, ctx) {
+          const deps = checkDeps(ctx);
+          const corePath = getCorePath(ctx);
+          const cmd = `${deps}python3 -c "
 import sys
-sys.path.insert(0, 'core')
+sys.path.insert(0, '${corePath}')
 from testers.sqli_tester import SQLiTester
 tester = SQLiTester()
 result = tester.test('${args.endpoint}', '${args.param}')
+print(result)
+"`;
+          const result = await ctx.$`${cmd}`;
+          return result.toString();
+        },
+      }),
+
+      auth_test: tool({
+        description: "认证安全测试。参数: endpoint",
+        args: {
+          endpoint: tool.schema.string(),
+        },
+        async execute(args, ctx) {
+          const deps = checkDeps(ctx);
+          const corePath = getCorePath(ctx);
+          const cmd = `${deps}python3 -c "
+import sys
+sys.path.insert(0, '${corePath}')
+from testers.auth_tester import AuthTester
+tester = AuthTester()
+result = tester.test('${args.endpoint}')
 print(result)
 "`;
           const result = await ctx.$`${cmd}`;
@@ -514,36 +504,30 @@ print(result)
 
       (config.agent as Record<string, AgentConfig>)["api-cyber-supervisor"] = createApiSecurityAgent(
         "api-cyber-supervisor",
-        "API安全测试编排者。协调完整扫描流程，永不停止，主动推进。",
-        buildCyberSupervisorPrompt,
-        "primary"
+        "API安全测试编排者。协调完整扫描流程，永不停止。",
+        CYBER_SUPERVISOR_PROMPT,
+        "primary",
+        "#FF6B6B"
       );
 
       (config.agent as Record<string, AgentConfig>)["api-probing-miner"] = createApiSecurityAgent(
         "api-probing-miner",
         "漏洞挖掘专家。专注发现和验证 API 漏洞。",
-        buildProbingMinerPrompt,
+        PROBING_MINER_PROMPT,
         "subagent"
       );
 
       (config.agent as Record<string, AgentConfig>)["api-resource-specialist"] = createApiSecurityAgent(
         "api-resource-specialist",
         "资源探测专家。专注采集和发现 API 端点。",
-        buildResourceSpecialistPrompt,
-        "subagent"
-      );
-
-      (config.agent as Record<string, AgentConfig>)["api-orchestrator"] = createApiSecurityAgent(
-        "api-orchestrator",
-        "测试编排器。协调完整测试流程。",
-        buildOrchestratorPrompt,
+        RESOURCE_SPECIALIST_PROMPT,
         "subagent"
       );
 
       (config.agent as Record<string, AgentConfig>)["api-vuln-verifier"] = createApiSecurityAgent(
         "api-vuln-verifier",
         "漏洞验证专家。验证和确认安全漏洞。",
-        buildVulnVerifierPrompt,
+        VULN_VERIFIER_PROMPT,
         "subagent"
       );
     },
