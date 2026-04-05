@@ -1,57 +1,22 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin";
-import { join, dirname, resolve } from "path";
-import { existsSync, readFileSync } from "fs";
+import { join } from "path";
+import { existsSync } from "fs";
 
 const SKILL_DIR = "skills/api-security-testing";
 const CORE_DIR = `${SKILL_DIR}/core`;
-const AGENTS_DIR = ".config/opencode/agents";
-const AGENTS_FILENAME = "AGENTS.md";
-
-function getSkillPath(ctx: { directory: string }): string {
-  return join(ctx.directory, SKILL_DIR);
-}
 
 function getCorePath(ctx: { directory: string }): string {
   return join(ctx.directory, CORE_DIR);
 }
 
 function checkDeps(ctx: { directory: string }): string {
-  const skillPath = getSkillPath(ctx);
+  const skillPath = join(ctx.directory, SKILL_DIR);
   const reqFile = join(skillPath, "requirements.txt");
   if (existsSync(reqFile)) {
     return `pip install -q -r "${reqFile}" 2>/dev/null; `;
   }
   return "";
-}
-
-function getAgentsDir(): string {
-  const home = process.env.HOME || process.env.USERPROFILE || "/root";
-  return join(home, AGENTS_DIR);
-}
-
-function getInjectedAgentsPrompt(): string {
-  const agentsDir = getAgentsDir();
-  const agentsPath = join(agentsDir, "api-cyber-supervisor.md");
-  
-  if (!existsSync(agentsPath)) {
-    return "";
-  }
-
-  try {
-    const content = readFileSync(agentsPath, "utf-8");
-    return `
-
-[API Security Testing Agents Available]
-When performing security testing tasks, you can use the following specialized agents:
-
-${content}
-
-To activate these agents, simply mention their name in your response (e.g., "@api-cyber-supervisor" to coordinate security testing).
-`;
-  } catch {
-    return "";
-  }
 }
 
 async function execShell(ctx: unknown, cmd: string): Promise<string> {
@@ -62,8 +27,6 @@ async function execShell(ctx: unknown, cmd: string): Promise<string> {
 
 const ApiSecurityTestingPlugin: Plugin = async (ctx) => {
   console.log("[api-security-testing] Plugin loaded");
-
-  const injectedSessions = new Set<string>();
 
   return {
     tool: {
@@ -273,69 +236,6 @@ print(result)
           return await execShell(ctx, cmd);
         },
       }),
-    },
-
-    "chat.message": async (input, output) => {
-      const sessionID = input.sessionID;
-      
-      if (!injectedSessions.has(sessionID)) {
-        injectedSessions.add(sessionID);
-        
-        const agentsPrompt = getInjectedAgentsPrompt();
-        if (agentsPrompt) {
-          const parts = output.parts as Array<{ type: string; text?: string }>;
-          const textPart = parts.find(p => p.type === "text");
-          if (textPart && textPart.text) {
-            textPart.text += agentsPrompt;
-          }
-        }
-      }
-    },
-
-    "tool.execute.after": async (input, output) => {
-      const toolName = input.tool.toLowerCase();
-      const agentsDir = getAgentsDir();
-      
-      if (!existsSync(agentsDir)) return;
-
-      if (toolName === "read") {
-        const filePath = output.title;
-        if (!filePath) return;
-
-        const resolved = resolve(filePath);
-        const dir = dirname(resolved);
-
-        if (!dir.includes(agentsDir)) return;
-
-        const agentsPath = join(agentsDir, AGENTS_FILENAME);
-        if (!existsSync(agentsPath)) return;
-
-        try {
-          const content = readFileSync(agentsPath, "utf-8");
-          output.output += `\n\n[Agents Definition]\n${content}`;
-        } catch (err) {
-          console.error("[api-security-testing] Failed to inject agents:", err);
-        }
-      }
-    },
-
-    event: async (input) => {
-      const { event } = input;
-
-      if (event.type === "session.deleted" || event.type === "session.compacted") {
-        const props = event.properties as Record<string, unknown> | undefined;
-        let sessionID: string | undefined;
-
-        if (event.type === "session.deleted") {
-          sessionID = (props?.info as { id?: string })?.id;
-        } else {
-          sessionID = (props?.sessionID ?? (props?.info as { id?: string })?.id) as string | undefined;
-        }
-
-        if (sessionID) {
-          injectedSessions.delete(sessionID);
-        }
-      }
     },
   };
 };
