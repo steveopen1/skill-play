@@ -1,89 +1,76 @@
 #!/usr/bin/env node
 
 /**
- * preuninstall.mjs - API Security Testing Plugin
+ * preuninstall.mjs - API Security Testing Plugin Cleanup
  * 
- * Removes installed files when the package is uninstalled.
+ * Removes:
+ * 1. agents from ~/.config/opencode/agents/
+ * 2. SKILL.md and references from ~/.config/opencode/skills/api-security-testing/
  */
 
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { unlinkSync, existsSync, readdirSync, rmdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = join(__filename, "..");
 
 function getOpencodeBaseDir() {
   const home = process.env.HOME || process.env.USERPROFILE || "/root";
   return join(home, ".config", "opencode");
 }
 
-function deleteFile(filePath) {
-  try {
-    if (existsSync(filePath)) {
-      rmSync(filePath);
-      console.log(`  ✓ Removed: ${filePath}`);
-      return true;
-    }
-  } catch (err) {
-    console.error(`  ✗ Failed to remove: ${filePath} - ${err.message}`);
-  }
-  return false;
-}
-
-function deleteDirectory(dirPath) {
-  try {
-    if (existsSync(dirPath)) {
-      rmSync(dirPath, { recursive: true });
-      console.log(`  ✓ Removed directory: ${dirPath}`);
-      return true;
-    }
-  } catch (err) {
-    console.error(`  ✗ Failed to remove directory: ${dirPath} - ${err.message}`);
-  }
-  return false;
-}
+const AGENTS_TO_REMOVE = [
+  "api-cyber-supervisor.md",
+  "api-probing-miner.md",
+  "api-resource-specialist.md",
+  "api-vuln-verifier.md",
+];
 
 function main() {
-  const baseDir = getOpencodeBaseDir();
-  const agentsDir = join(baseDir, "agents");
-  const skillDir = join(baseDir, "skills", "api-security-testing");
+  const agentsTargetDir = join(getOpencodeBaseDir(), "agents");
+  const skillTargetDir = join(getOpencodeBaseDir(), "skills", "api-security-testing");
   
-  console.log("[api-security-testing] Uninstalling...");
-  console.log(`  Base directory: ${baseDir}`);
+  console.log("[api-security-testing] Cleaning up...");
+  console.log(`  Home: ${getOpencodeBaseDir()}`);
 
-  let removedCount = 0;
-  let totalCount = 0;
+  let totalRemoved = 0;
+  let totalFailed = 0;
 
-  // 1. Remove agent files
   console.log("\n[1/2] Removing agents...");
-  if (existsSync(agentsDir)) {
-    const agentFiles = readdirSync(agentsDir).filter(f => f.endsWith(".md"));
-    totalCount += agentFiles.length;
-    
-    for (const file of agentFiles) {
-      const filePath = join(agentsDir, file);
-      // Only remove our agents (prefix with our plugin name)
-      if (file.startsWith("api-")) {
-        if (deleteFile(filePath)) removedCount++;
-      } else {
-        console.log(`  - Skipped (not our agent): ${file}`);
+  for (const agent of AGENTS_TO_REMOVE) {
+    const agentPath = join(agentsTargetDir, agent);
+    try {
+      if (existsSync(agentPath)) {
+        unlinkSync(agentPath);
+        console.log(`  ✓ ${agent}`);
+        totalRemoved++;
       }
+    } catch (err) {
+      console.error(`  ✗ ${agent}: ${err.message}`);
+      totalFailed++;
     }
   }
 
-  // 2. Remove skill directory
-  console.log("\n[2/2] Removing skill...");
-  if (existsSync(skillDir)) {
-    if (deleteDirectory(skillDir)) {
-      removedCount++;
+  console.log("\n[2/2] Removing skill files...");
+  try {
+    if (existsSync(skillTargetDir)) {
+      rmSync(skillTargetDir, { recursive: true, force: true });
+      console.log(`  ✓ ${skillTargetDir}`);
+      totalRemoved++;
     }
+  } catch (err) {
+    console.error(`  ✗ ${skillTargetDir}: ${err.message}`);
+    totalFailed++;
   }
 
-  // Summary
-  console.log("\n========================================");
-  console.log(`Uninstall complete.`);
-  console.log("\nNote: If you reinstall the package, the postinstall script will re-install the files.");
+  console.log(`\n========================================`);
+  if (totalFailed === 0) {
+    console.log(`✓ Removed ${totalRemoved} item(s)`);
+    console.log(`\nThanks for using api-security-testing!`);
+  } else {
+    console.log(`⚠ Removed ${totalRemoved}, failed ${totalFailed}`);
+  }
 }
 
 main();
