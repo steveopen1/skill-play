@@ -1,6 +1,6 @@
 {
   "name": "opencode-api-security-testing",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "description": "API Security Testing Plugin for OpenCode - Automated vulnerability scanning and penetration testing",
   "type": "module",
   "main": "src/index.ts",
@@ -39,5 +39,9 @@
   "dependencies": {
     "@opencode-ai/plugin": "^1.1.19",
     "@opencode-ai/sdk": "^1.1.19"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "typescript": "^6.0.2"
   }
 }

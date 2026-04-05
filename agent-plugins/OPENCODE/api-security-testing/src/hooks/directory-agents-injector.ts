@@ -1,18 +1,24 @@
 import type { PluginInput } from "@opencode-ai/plugin";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, readFileSync } from "fs";
+import { dirname, join, resolve } from "path";
 
 const AGENTS_FILENAME = "AGENTS.md";
 const AGENTS_DIR = ".config/opencode/agents";
 
+function getHomeDir(): string {
+  return process.env.HOME || process.env.USERPROFILE || "/root";
+}
+
 export function createDirectoryAgentsInjectorHook(ctx: PluginInput) {
+  const injectedPaths = new Set<string>();
+
   function resolveAgentsDir(): string | null {
-    const home = process.env.HOME || process.env.USERPROFILE;
-    if (!home) return null;
+    const home = getHomeDir();
     return join(home, AGENTS_DIR);
   }
 
   function findAgentsMdUp(startDir: string, agentsDir: string): string | null {
+    const home = getHomeDir();
     let current = startDir;
 
     while (true) {
@@ -34,8 +40,6 @@ export function createDirectoryAgentsInjectorHook(ctx: PluginInput) {
   function getSessionKey(sessionID: string): string {
     return `api-sec-inject-${sessionID}`;
   }
-
-  const injectedPaths = new Set<string>();
 
   const toolExecuteAfter = async (
     input: { tool: string; sessionID: string; callID: string },

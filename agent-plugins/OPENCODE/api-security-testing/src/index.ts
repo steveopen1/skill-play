@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin";
-import { join } from "path";
+import { join, dirname, resolve } from "path";
 import { existsSync, readFileSync } from "fs";
 
 const SKILL_DIR = "skills/api-security-testing";
@@ -54,6 +54,12 @@ To activate these agents, simply mention their name in your response (e.g., "@ap
   }
 }
 
+async function execShell(ctx: unknown, cmd: string): Promise<string> {
+  const shell = ctx as { $: (strings: TemplateStringsArray, ...expr: unknown[]) => Promise<{ toString(): string }> };
+  const result = await shell.$`${cmd}`;
+  return result.toString();
+}
+
 const ApiSecurityTestingPlugin: Plugin = async (ctx) => {
   console.log("[api-security-testing] Plugin loaded");
 
@@ -78,8 +84,7 @@ tester = DeepAPITesterV55(target='${args.target}', headless=True)
 results = tester.run_test()
 print(results)
 "`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+          return await execShell(ctx, cmd);
         },
       }),
 
@@ -100,8 +105,7 @@ fuzzer = APIFuzzer('${args.endpoint}')
 results = fuzzer.fuzz(method='${args.method || 'GET'}')
 print(results)
 "`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+          return await execShell(ctx, cmd);
         },
       }),
 
@@ -122,8 +126,7 @@ verifier = VulnVerifier()
 result = verifier.verify('${args.vuln_type}', '${args.endpoint}')
 print(result)
 "`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+          return await execShell(ctx, cmd);
         },
       }),
 
@@ -145,8 +148,7 @@ print(f'发现 {len(endpoints)} 个端点:')
 for ep in endpoints:
     print(ep)
 "`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+          return await execShell(ctx, cmd);
         },
       }),
 
@@ -166,8 +168,7 @@ parser = JSParser()
 endpoints = parser.parse_file('${args.file_path}')
 print(f'从 JS 发现 {len(endpoints)} 个端点')
 "`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+          return await execShell(ctx, cmd);
         },
       }),
 
@@ -187,8 +188,7 @@ analyzer = SmartAnalyzer()
 result = analyzer.graphql_test('${args.endpoint}')
 print(result)
 "`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+          return await execShell(ctx, cmd);
         },
       }),
 
@@ -208,8 +208,7 @@ tester = CloudStorageTester()
 result = tester.full_test('${args.bucket_url}')
 print(result)
 "`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+          return await execShell(ctx, cmd);
         },
       }),
 
@@ -230,8 +229,7 @@ tester = IDORTester()
 result = tester.test('${args.endpoint}', '${args.resource_id}')
 print(result)
 "`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+          return await execShell(ctx, cmd);
         },
       }),
 
@@ -252,8 +250,7 @@ tester = SQLiTester()
 result = tester.test('${args.endpoint}', '${args.param}')
 print(result)
 "`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+          return await execShell(ctx, cmd);
         },
       }),
 
@@ -273,8 +270,7 @@ tester = AuthTester()
 result = tester.test('${args.endpoint}')
 print(result)
 "`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+          return await execShell(ctx, cmd);
         },
       }),
     },
@@ -343,10 +339,5 @@ print(result)
     },
   };
 };
-
-function resolve(filePath: string): string {
-  if (filePath.startsWith("/")) return filePath;
-  return join(process.cwd(), filePath);
-}
 
 export default ApiSecurityTestingPlugin;
