@@ -361,7 +361,7 @@ print(result)
         prompt: VULN_VERIFIER_PROMPT,
       };
 
-      console.log("[api-security-testing] Agents registered:", Object.keys(agents));
+      console.log("[api-security-testing] Tools registered");
     },
   };
 };
