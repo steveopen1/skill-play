@@ -7,21 +7,36 @@ import { existsSync } from "fs";
 const SKILL_DIR = "skills/api-security-testing";
 const CORE_DIR = `${SKILL_DIR}/core`;
 
-function getSkillPath(ctx: { directory: string }): string {
-  return join(ctx.directory, SKILL_DIR);
-}
-
 function getCorePath(ctx: { directory: string }): string {
   return join(ctx.directory, CORE_DIR);
 }
 
-function checkDeps(ctx: { directory: string }): string {
-  const skillPath = getSkillPath(ctx);
-  const reqFile = join(skillPath, "requirements.txt");
+function checkAndInstallDeps(ctx: { directory: string }): string {
+  const corePath = getCorePath(ctx);
+  const reqFile = join(corePath, "..", "requirements.txt");
   if (existsSync(reqFile)) {
-    return `pip install -q -r "${reqFile}" 2>/dev/null; `;
+    return `pip install -q -r "${reqFile}" 2>/dev/null || pip install -q requests beautifulsoup4 playwright 2>/dev/null; `;
   }
   return "";
+}
+
+async function execPython(ctx: { directory: string }, script: string, timeout = 60): Promise<string> {
+  const corePath = getCorePath(ctx);
+  const deps = checkAndInstallDeps(ctx);
+  
+  try {
+    const result = await ctx.$`${deps}timeout ${timeout} python3 -c ${script}`;
+    return result.toString();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes("timeout")) {
+      return `错误: 执行超时 (${timeout}秒)。目标可能无响应或需要更长时间。`;
+    }
+    if (errorMessage.includes("ModuleNotFoundError")) {
+      return `错误: 缺少 Python 依赖模块。请运行: pip install -r requirements.txt`;
+    }
+    return `错误: ${errorMessage}`;
+  }
 }
 
 const CYBER_SUPERVISOR_PROMPT = `你是 API 安全测试的**赛博监工**，代号"P9"。
@@ -54,7 +69,29 @@ const CYBER_SUPERVISOR_PROMPT = `你是 API 安全测试的**赛博监工**，�
 | vuln_verify | 漏洞验证 |
 | sqli_test | SQL注入测试 |
 | idor_test | IDOR测试 |
-| auth_test | 认证测试`;
+| auth_test | 认证测试
+
+## 工作流程
+
+1. 使用 browser_collect 采集端点
+2. 使用 js_parse 分析 JS 文件
+3. 使用 api_security_scan 进行全面扫描
+4. 使用特定工具进行针对性测试
+
+## 输出格式
+
+\`\`\`markdown
+## 安全测试报告
+
+### 目标
+- URL: {target}
+
+### 发现漏洞
+| 类型 | 端点 | 严重程度 |
+|------|------|---------|
+| SQL注入 | /api/user?id=1 | HIGH |
+\`\`\`
+`;
 
 const PROBING_MINER_PROMPT = `你是**API漏洞挖掘专家**，专注于发现和验证安全漏洞。
 
@@ -97,7 +134,16 @@ const RESOURCE_SPECIALIST_PROMPT = `你是**API资源探测专家**，专注于�
 使用 js_parse 解析 JS 文件
 
 ### 3. 目录探测
-常见路径: /api/v1/*, /graphql, /swagger, /.well-known/*`;
+常见路径: /api/v1/*, /graphql, /swagger, /.well-known/*
+
+## 端点分类
+
+| 风险 | 类型 | 示例 |
+|------|------|------|
+| 高 | 认证 | /login, /oauth/* |
+| 高 | 数据 | /api/*/list |
+| 中 | 用户 | /users, /profile |
+| 极高 | 管理 | /admin, /manage`;
 
 const VULN_VERIFIER_PROMPT = `你是**漏洞验证专家**，专注于验证和确认安全漏洞。
 
@@ -105,10 +151,18 @@ const VULN_VERIFIER_PROMPT = `你是**漏洞验证专家**，专注于验证和�
 
 1. **快速验证** - 确认漏洞是否存在
 2. **风险评估** - 判断实际影响
-3. **PoC 生成** - 提供可执行的证明`;
+3. **PoC 生成** - 提供可执行的证明
+
+## 验证流程
+
+1. 构造 payload
+2. 发送测试请求
+3. 分析响应
+4. 判断结果
+5. 生成 PoC`;
 
 const ApiSecurityTestingPlugin: Plugin = async (ctx) => {
-  console.log("[api-security-testing] Plugin loaded");
+  console.log("[api-security-testing] Plugin loaded, version: 3.0.2");
 
   return {
     tool: {
@@ -119,18 +173,15 @@ const ApiSecurityTestingPlugin: Plugin = async (ctx) => {
           scan_type: tool.schema.enum(["full", "quick", "targeted"]).optional(),
         },
         async execute(args, ctx) {
-          const deps = checkDeps(ctx);
-          const corePath = getCorePath(ctx);
-          const cmd = `${deps}python3 -c "
+          const script = `
 import sys
-sys.path.insert(0, '${corePath}')
+sys.path.insert(0, '${getCorePath(ctx)}')
 from deep_api_tester_v55 import DeepAPITesterV55
 tester = DeepAPITesterV55(target='${args.target}', headless=True)
 results = tester.run_test()
 print(results)
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+`;
+          return await execPython(ctx, script, 120);
         },
       }),
 
@@ -141,18 +192,15 @@ print(results)
           method: tool.schema.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional(),
         },
         async execute(args, ctx) {
-          const deps = checkDeps(ctx);
-          const corePath = getCorePath(ctx);
-          const cmd = `${deps}python3 -c "
+          const script = `
 import sys
-sys.path.insert(0, '${corePath}')
+sys.path.insert(0, '${getCorePath(ctx)}')
 from api_fuzzer import APIFuzzer
 fuzzer = APIFuzzer('${args.endpoint}')
 results = fuzzer.fuzz(method='${args.method || 'GET'}')
 print(results)
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+`;
+          return await execPython(ctx, script, 60);
         },
       }),
 
@@ -163,18 +211,15 @@ print(results)
           endpoint: tool.schema.string(),
         },
         async execute(args, ctx) {
-          const deps = checkDeps(ctx);
-          const corePath = getCorePath(ctx);
-          const cmd = `${deps}python3 -c "
+          const script = `
 import sys
-sys.path.insert(0, '${corePath}')
+sys.path.insert(0, '${getCorePath(ctx)}')
 from verifiers.vuln_verifier import VulnVerifier
 verifier = VulnVerifier()
 result = verifier.verify('${args.vuln_type}', '${args.endpoint}')
 print(result)
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+`;
+          return await execPython(ctx, script, 30);
         },
       }),
 
@@ -184,20 +229,17 @@ print(result)
           url: tool.schema.string(),
         },
         async execute(args, ctx) {
-          const deps = checkDeps(ctx);
-          const corePath = getCorePath(ctx);
-          const cmd = `${deps}python3 -c "
+          const script = `
 import sys
-sys.path.insert(0, '${corePath}')
+sys.path.insert(0, '${getCorePath(ctx)}')
 from collectors.browser_collect import BrowserCollector
 collector = BrowserCollector(headless=True)
 endpoints = collector.collect('${args.url}')
 print(f'发现 {len(endpoints)} 个端点:')
 for ep in endpoints:
     print(ep)
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+`;
+          return await execPython(ctx, script, 90);
         },
       }),
 
@@ -207,18 +249,15 @@ for ep in endpoints:
           file_path: tool.schema.string(),
         },
         async execute(args, ctx) {
-          const deps = checkDeps(ctx);
-          const corePath = getCorePath(ctx);
-          const cmd = `${deps}python3 -c "
+          const script = `
 import sys
-sys.path.insert(0, '${corePath}')
+sys.path.insert(0, '${getCorePath(ctx)}')
 from collectors.js_parser import JSParser
 parser = JSParser()
 endpoints = parser.parse_file('${args.file_path}')
 print(f'从 JS 发现 {len(endpoints)} 个端点')
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+`;
+          return await execPython(ctx, script, 30);
         },
       }),
 
@@ -228,18 +267,15 @@ print(f'从 JS 发现 {len(endpoints)} 个端点')
           endpoint: tool.schema.string(),
         },
         async execute(args, ctx) {
-          const deps = checkDeps(ctx);
-          const corePath = getCorePath(ctx);
-          const cmd = `${deps}python3 -c "
+          const script = `
 import sys
-sys.path.insert(0, '${corePath}')
+sys.path.insert(0, '${getCorePath(ctx)}')
 from smart_analyzer import SmartAnalyzer
 analyzer = SmartAnalyzer()
 result = analyzer.graphql_test('${args.endpoint}')
 print(result)
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+`;
+          return await execPython(ctx, script, 60);
         },
       }),
 
@@ -249,18 +285,15 @@ print(result)
           bucket_url: tool.schema.string(),
         },
         async execute(args, ctx) {
-          const deps = checkDeps(ctx);
-          const corePath = getCorePath(ctx);
-          const cmd = `${deps}python3 -c "
+          const script = `
 import sys
-sys.path.insert(0, '${corePath}')
+sys.path.insert(0, '${getCorePath(ctx)}')
 from cloud_storage_tester import CloudStorageTester
 tester = CloudStorageTester()
 result = tester.full_test('${args.bucket_url}')
 print(result)
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+`;
+          return await execPython(ctx, script, 60);
         },
       }),
 
@@ -271,18 +304,15 @@ print(result)
           resource_id: tool.schema.string(),
         },
         async execute(args, ctx) {
-          const deps = checkDeps(ctx);
-          const corePath = getCorePath(ctx);
-          const cmd = `${deps}python3 -c "
+          const script = `
 import sys
-sys.path.insert(0, '${corePath}')
+sys.path.insert(0, '${getCorePath(ctx)}')
 from testers.idor_tester import IDORTester
 tester = IDORTester()
 result = tester.test('${args.endpoint}', '${args.resource_id}')
 print(result)
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+`;
+          return await execPython(ctx, script, 30);
         },
       }),
 
@@ -293,18 +323,15 @@ print(result)
           param: tool.schema.string(),
         },
         async execute(args, ctx) {
-          const deps = checkDeps(ctx);
-          const corePath = getCorePath(ctx);
-          const cmd = `${deps}python3 -c "
+          const script = `
 import sys
-sys.path.insert(0, '${corePath}')
+sys.path.insert(0, '${getCorePath(ctx)}')
 from testers.sqli_tester import SQLiTester
 tester = SQLiTester()
 result = tester.test('${args.endpoint}', '${args.param}')
 print(result)
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+`;
+          return await execPython(ctx, script, 30);
         },
       }),
 
@@ -314,18 +341,15 @@ print(result)
           endpoint: tool.schema.string(),
         },
         async execute(args, ctx) {
-          const deps = checkDeps(ctx);
-          const corePath = getCorePath(ctx);
-          const cmd = `${deps}python3 -c "
+          const script = `
 import sys
-sys.path.insert(0, '${corePath}')
+sys.path.insert(0, '${getCorePath(ctx)}')
 from testers.auth_tester import AuthTester
 tester = AuthTester()
 result = tester.test('${args.endpoint}')
 print(result)
-"`;
-          const result = await ctx.$`${cmd}`;
-          return result.toString();
+`;
+          return await execPython(ctx, script, 30);
         },
       }),
     },
