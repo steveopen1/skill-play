@@ -1,7 +1,7 @@
 {
   "name": "opencode-api-security-testing",
-  "version": "3.0.3",
-  "description": "API Security Testing Plugin for OpenCode - Automated vulnerability scanning and penetration testing",
+  "version": "4.0.0",
+  "description": "API Security Testing Plugin for OpenCode - Tools for vulnerability scanning",
   "type": "module",
   "main": "src/index.ts",
   "files": [
@@ -9,36 +9,21 @@
     "agents/",
     "core/",
     "references/",
-    "examples/",
-    "SKILL.md",
-    "postinstall.mjs",
-    "preuninstall.mjs"
+    "SKILL.md"
   ],
-  "scripts": {
-    "postinstall": "node postinstall.mjs",
-    "preuninstall": "node preuninstall.mjs"
-  },
   "keywords": [
     "opencode",
     "opencode-plugin",
     "security",
-    "api-security",
-    "pentest",
-    "vulnerability-scanning"
+    "api-security"
   ],
   "author": "steveopen1",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/steveopen1/skill-play"
+    "url": "git+https://github.com/steveopen1/skill-play.git"
   },
-  "homepage": "https://github.com/steveopen1/skill-play/tree/main/agent-plugins/OPENCODE/api-security-testing",
   "peerDependencies": {
-    "@opencode-ai/plugin": "^1.1.19",
-    "@opencode-ai/sdk": "^1.1.19"
-  },
-  "dependencies": {
-    "@opencode-ai/plugin": "^1.1.19",
-    "@opencode-ai/sdk": "^1.1.19"
+    "@opencode-ai/plugin": "^1.1.19"
   }
 }
