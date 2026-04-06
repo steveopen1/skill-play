@@ -1,357 +1,523 @@
 ---
 name: api-security-testing
-description: 针对授权目标进行结构化的 REST/GraphQL API 安全评估。【触发词】安全测试、安全审计、渗透测试、漏洞检测、安全评估、api安全、接口安全、帮我检测漏洞、检查安全问题、安全报告、全流程测试、完整测试、云存储安全。【强制要求】(1)必须使用Playwright进行JS动态采集 (2)必须拦截所有XHR/Fetch请求 (3)必须模拟用户交互触发动态API (4)必须处理HTTPS证书问题。【重要】必须确认用户拥有该目标的合法授权！
+description: API安全测试引导框架。【触发词】安全测试、安全审计、渗透测试、漏洞检测、安全评估、api安全、接口安全、帮我检测漏洞、检查安全问题、安全报告。【核心理念】Skill是引导者而非自动化工具 - 提供决策树、检查清单、推理引导、知识库，辅助人类测试者而非替代。【重要】必须确认用户拥有该目标的合法授权！
 ---
 
-## 完整调度流程
+## 核心理念
 
-### 决策树
-
-```mermaid
-flowchart TD
-    A["开始: 获取目标URL"] --> B{"目标可访问?"}
-    B -->|否| Z["报告: 目标不可达"]
-    B -->|是| C{"识别技术栈"}
-    C --> D{"SPA应用?"}
-    D -->|是| E["阶段2: JS采集【禁止降级】"]
-    D -->|否| F["阶段3: 直接探测API"]
-    E --> G["阶段3: JS深度分析"]
-    G --> H["阶段4: API测试"]
-    H --> I{"发现漏洞?"}
-    I -->|是| J["阶段5: 漏洞验证"]
-    J --> K["构建利用链"]
-    K --> L["生成报告"]
-    I -->|否| L
-    F --> H
-```
-
-### 完整执行流程
+### 定位转变
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│ 阶段1: 基础探测                                                       │
-├─────────────────────────────────────────────────────────────────────┤
-│ 输入: 目标URL                                                         │
-│ 处理:                                                                  │
-│   1. HTTP/HTTPS探测 - curl/requests                                  │
-│   2. 技术栈识别 - Server头、HTML特征                                 │
-│   3. 判断SPA应用 - /api/*返回HTML?                                   │
-│   4. Swagger探测 - /swagger-ui.html, /v2/api-docs                    │
-│   5. 端口探测 - 常见端口: 8080,8443,9000                            │
-│ 输出:                                                                  │
-│   - 技术栈类型: SPA/传统                                             │
-│   - API基础路径                                                       │
-│   - Swagger文档(如有)                                                │
-│   - 目标可访问性确认                                                  │
-└─────────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────────┐
-│ 阶段2: JS采集【禁止降级·仅SPA】                                       │
-├─────────────────────────────────────────────────────────────────────┤
-│ 输入: 目标URL + 技术栈类型(SPA)                                       │
-│ 处理:                                                                  │
-│   1. Playwright启动 - ignore_https_errors=True                      │
-│   2. 访问目标 - wait_until=networkidle                               │
-│   3. 拦截请求 - page.on('request')捕获XHR/Fetch                     │
-│   4. 用户交互 - 点击、滚动、表单填写                                  │
-│   5. 敏感信息 - cookies、localStorage                                │
-│   6. 【禁止降级】不能使用selenium/requests/curl采集JS                  │
-│ 输出:                                                                  │
-│   - XHR/Fetch请求列表                                                 │
-│   - API端点清单                                                       │
-│   - 敏感信息(cookies/token)                                           │
-│   - 采集方法: playwright                                              │
-└─────────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────────┐
-│ 阶段3: JS深度分析                                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│ 输入: JS文件列表/SPA采集结果                                          │
-│ 处理:                                                                  │
-│   1. baseURL提取 - 从JS配置/响应头                                   │
-│   2. AST+正则双模式 - 提取API路径                                     │
-│   3. 递归分析chunk文件 - webpack多chunk                               │
-│   4. 敏感信息提取 - IP/域名/凭证                                       │
-│   5. base_path确定 - 配置>响应头>字典                                 │
-│ 输出:                                                                  │
-│   - 完整API端点列表                                                   │
-│   - base_path配置                                                     │
-│   - 敏感信息泄露                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────────┐
-│ 阶段4: API测试                                                        │
-├─────────────────────────────────────────────────────────────────────┤
-│ 输入: API端点列表                                                      │
-│ 处理:                                                                  │
-│   1. 【发现即测】- 发现接口立即测试相关漏洞                           │
-│   2. SQL注入 - sqli_tester.py / 01-sqli-tests.md                    │
-│   3. 用户枚举 - 02-user-enum-tests.md                                 │
-│   4. JWT测试 - jwt_tester.py / 03-jwt-tests.md                       │
-│   5. IDOR越权 - idor_tester.py / 04-idor-tests.md                    │
-│   6. 敏感信息 - sensitive_finder.py / 05-sensitive-data-tests.md      │
-│   7. 业务逻辑 - 06-biz-logic-tests.md                                 │
-│   8. 暴力破解 - 08-brute-force-tests.md                                │
-│ 输出:                                                                  │
-│   - 漏洞清单 + 验证证据                                                │
-│   - 漏洞类型分类                                                       │
-└─────────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────────┐
-│ 阶段5: 漏洞验证 + 利用链构造                                           │
-├─────────────────────────────────────────────────────────────────────┤
-│ 输入: 漏洞清单                                                        │
-│ 处理:                                                                  │
-│   1. 10维度验证 - vuln_verifier.py                                    │
-│   2. 误报排除 - response_diff.py                                      │
-│   3. 利用链构造 - 09-vulnerability-chains.md                          │
-│   4. 漏洞关联 - 独立漏洞→攻击路径                                      │
-│ 输出:                                                                  │
-│   - 确认漏洞列表                                                       │
-│   - 完整利用链                                                         │
-│   - 修复建议                                                           │
-└─────────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────────┐
-│ 阶段6: 报告生成                                                       │
-├─────────────────────────────────────────────────────────────────────┤
-│ 输入: 确认漏洞 + 利用链                                                │
-│ 处理:                                                                  │
-│   1. 按report-template.md生成                                          │
-│   2. 参考security-report-example.md                                    │
-│ 输出:                                                                  │
-│   - 安全评估报告                                                       │
-│   - 漏洞详情 + 修复建议                                               │
-└─────────────────────────────────────────────────────────────────────┘
+❌ 过去（错误认知）
+   Skill = 全自动化测试工具
+   Skill = "一键扫描"脚本
+   Skill = 替代人类测试者
+
+✅ 现在（正确认知）
+   Skill = 经验丰富的安全顾问
+         = 决策流程引导者
+         = 测试思路提供者
+         = 辅助人类测试者的框架
 ```
 
-### 非SPA应用执行流程
+### 核心原则
+
+**1. Skill 是引导，不是执行**
+- 提供决策树，而不是自动执行
+- 给出检查清单，而不是测试脚本
+- 提供思考方向，而不是给出结论
+
+**2. 不确定性是人类的价值**
+- 安全测试充满不确定性
+- 人类判断比自动化更灵活
+- 经验直觉比规则更重要
+
+**3. Skill 辅助人类，而不是替代**
+- 工具集成由人控制
+- 测试过程由人决策
+- 最终结论由人判断
+
+---
+
+## 决策树引导系统
+
+### 决策树索引
+
+根据当前场景选择对应的决策树：
+
+| 场景 | 决策树 | 说明 |
+|------|--------|------|
+| 发现登录/认证端点 | [认证端点决策树](#认证端点决策树) | 分析认证机制安全性 |
+| 发现API端点 | [API端点决策树](#api端点决策树) | 判断端点类型和测试重点 |
+| 发现文件上传 | [文件上传决策树](#文件上传决策树) | 分析上传功能风险 |
+| 响应全是HTML | [SPA识别决策树](#spa应用决策树) | 判断是否需要JS采集 |
+| 所有请求被拦截 | [WAF识别决策树](#waf识别决策树) | 判断是否为安全设备 |
+
+### 认证端点决策树
 
 ```
-非SPA应用跳过阶段2，直接进入阶段3：
+## 当发现登录/认证端点时
 
-阶段1 → 阶段3(直接探测) → 阶段4 → 阶段5 → 阶段6
+### 第一步: 收集基础信息
+- [ ] 查看登录表单HTML，获取参数名
+- [ ] 拦截真实的登录请求
+- [ ] 分析请求头（Cookie、Token、Referer等）
+- [ ] 检查是否有JWT token及其签名算法
 
-阶段3处理：
-1. 使用curl/requests探测常见端点
-2. Fuzzing字典: /api, /admin, /v1, /v2等
-3. Swagger文档获取(如有)
-4. 分析响应获取更多信息
+### 第二步: 分析响应特征
+- [ ] 测试空密码的响应
+- [ ] 测试错误密码的响应
+- [ ] 测试不存在用户的响应
+- [ ] 对比错误消息是否有差异
+
+### 第三步: 推理可能的漏洞
+如果错误消息有差异 → 可能存在用户枚举
+如果返回SQL错误 → 可能存在SQL注入
+如果响应时间不同 → 可能存在时序攻击
+如果有验证码 → 需要处理验证码
+
+### 第四步: 选择测试策略
+→ 参考"知识库 - 认证测试章节"
+→ 选择合适的测试payload
+→ 记录测试过程
 ```
 
-### 执行检查清单
+### API端点决策树
 
 ```
-□ 阶段1: 基础探测
-   □ HTTP/HTTPS探测成功
-   □ 技术栈识别完成
-   □ 判断SPA/传统应用
-   □ Swagger探测完成(如有)
+## 当发现API端点时
 
-□ 阶段2: JS采集(仅SPA)
-   □ Playwright启动成功
-   □ 证书问题处理(ignore_https_errors)
-   □ XHR/Fetch请求捕获
-   □ 用户交互触发
-   □ 敏感信息采集
+### 第一步: 判断端点类型
+根据URL路径判断:
+- /login, /auth, /token → 认证类
+- /user, /profile → 用户类
+- /admin, /manage → 管理类
+- /file, /upload → 文件操作类
+- /api/config, /settings → 配置类
 
-□ 阶段3: JS深度分析
-   □ baseURL/base_path确定
-   □ API端点列表完整
-   □ 敏感信息提取
+### 第二步: 选择测试重点
+认证类 → SQL注入、暴力破解、用户枚举
+用户类 → IDOR、信息泄露
+管理类 → 越权、权限绕过
+文件类 → 上传绕过、路径遍历
+配置类 → 信息泄露
 
-□ 阶段4: API测试
-   □ 所有端点完成测试
-   □ 发现即测原则执行
-   □ 漏洞分类完成
-
-□ 阶段5: 漏洞验证
-   □ 10维度验证完成
-   □ 误报排除确认
-   □ 利用链构造完成
-
-□ 阶段6: 报告
-   □ 报告生成完成
-   □ 修复建议完整
+### 第三步: 执行测试
+→ 参考"检查清单 - {类型}测试章节"
+→ 记录发现的证据
+→ 验证是否为误报
 ```
 
-## 前置检查与依赖处理
-
-### 【强制】采集模块禁止降级
-
-**【重要】SPA应用JS采集必须使用Playwright，绝对禁止降级！**
+### 文件上传决策树
 
 ```
-遇到Playwright不可用时：
-1. 首先 pip install playwright
-2. 然后 playwright install chromium
-3. 最后 playwright install-deps chromium  # 安装系统依赖
+## 当发现文件上传接口时
 
-自动检测并安装缺失依赖：
-try:
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        browser.close()
-except Exception as e:
-    if "libglib" in str(e) or "Shared object" in str(e):
-        subprocess.run(["playwright", "install-deps", "chromium"], check=True)
-    # 重新尝试启动
+### 第一步: 分析上传功能
+- [ ] 确定上传参数名（file, image, attachment...）
+- [ ] 分析允许的文件类型
+- [ ] 查看上传后的访问URL
 
-常见依赖缺失及解决：
-| 缺失库 | 解决方案 |
-|--------|----------|
-| libglib-2.0.so | playwright install-deps chromium |
-| libnss3 | 同上 |
-| libatk | 同上 |
-| libpango | 同上 |
+### 第二步: 识别验证位置
+客户端验证？ → 可绕过
+服务端验证？ → 需要分析验证逻辑
 
-【禁止降级】绝对不允许：
-- 不能降级到 selenium
-- 不能降级到 pyppeteer  
-- 不能降级到 requests 静态解析
-- 不能降级到 curl 抓取JS
+### 第三步: 测试绕过方式
+- [ ] 双重扩展名（.php.jpg）
+- [ ] MIME类型绕过
+- [ ] 文件内容欺骗
+- [ ] 路径遍历上传
 
-如果Playwright在修复依赖后仍无法使用，报告环境问题并停止采集阶段。
+### 第四步: 验证利用
+→ 尝试访问上传后的文件
+→ 确认是否可执行
 ```
 
-### 其他依赖处理
+### SPA应用决策树
 
 ```
-遇到requests不可用：
-1. pip install requests
+## 当所有API返回HTML时
 
-注意：requests降级是允许的，因为它是补充工具。
+### 第一步: 确认是SPA
+- [ ] 检查响应内容是否相同
+- [ ] 查看是否有Vue/React特征
+- [ ] 检查响应长度
+
+### 第二步: 判断处理方式
+如果是SPA：
+→ 需要从JS中提取真实API地址
+→ 需要使用浏览器工具触发动态API
+→ 参考"SPA采集引导流程"
+
+如果不是SPA：
+→ 检查是否为WAF拦截
+→ 检查是否需要特定Header
 ```
 
-## 发现即测原则
-
-**不要等全部扫描完再测试，发现接口立即测试。**
+### WAF识别决策树
 
 ```
-错误做法：
-1. 先扫描所有端点
-2. 再逐一测试漏洞
+## 当请求被统一拦截时
 
-正确做法：
-1. 发现一个接口 → 立即测试相关漏洞
-2. 发现敏感接口 → 立即深入测试
-3. 发现认证接口 → 立即测试绕过
+### 第一步: 识别WAF特征
+- [ ] 响应包含"拦截"、"安全"、"访问受限"
+- [ ] 所有响应返回相似的HTML页面
+- [ ] 响应内容与实际API无关
 
-发现Swagger → 立即访问获取更多API
-发现Actuator → 立即测试敏感端点
-发现登录接口 → 立即测试注入/爆破
-发现查询接口 → 立即测试IDOR
-发现文件上传接口 → 立即测试上传绕过
+### 第二步: 验证WAF
+发送正常请求：
+- 请求1: 返回业务JSON = 正常
+- 请求2: 返回HTML拦截页 = WAF
+- 请求3: 返回业务JSON = 恢复
+
+### 第三步: 处理策略
+确认为WAF后：
+→ 记录"存在WAF防护"
+→ 可尝试降低请求频率
+→ 不是漏洞，是安全能力
 ```
 
-### API 类型对应的测试重点
+---
 
-| API 类型 | 发现后立即测试 |
-|----------|---------------|
-| 认证类 (login, auth) | SQL注入、暴力破解、用户枚举 |
-| 查询类 (list, get, search) | IDOR，信息泄露、注入 |
-| 操作类 (add, modify, delete) | 越权、批量操作、业务逻辑 |
-| 文件类 (upload, download) | 上传绕过、恶意文件、路径遍历 |
-| 支付类 (pay, refund, order) | 金额篡改、支付绕过、退款欺诈 |
+## 检查清单系统
 
-## 核心检测思维
+### 检查清单索引
 
-### 遇到"查询类"接口时
+| 检查清单 | 适用场景 | 说明 |
+|----------|----------|------|
+| [认证测试检查清单](#认证测试检查清单) | 登录/认证接口 | 认证相关测试项 |
+| [SQL注入检查清单](#sql注入检查清单) | 所有用户输入点 | 注入测试项 |
+| [IDOR检查清单](#idor检查清单) | 资源访问接口 | 越权测试项 |
+| [JWT检查清单](#jwt检查清单) | 使用JWT的接口 | Token测试项 |
+| [敏感信息检查清单](#敏感信息检查清单) | 所有接口响应 | 信息泄露检查 |
+| [文件上传检查清单](#文件上传检查清单) | 文件上传接口 | 上传安全检查 |
 
-当你发现一个接口用于查询数据时：
-
-```
-思考：这个接口查的是什么数据？需要认证吗？能查到别人的数据吗？
-```
-
-**推理步骤：**
-1. 这个接口查询需要什么参数？（userId、phone、orderNo...）
-2. 不带参数能查到数据吗？
-3. 带别人的ID能查到数据吗？（IDOR）
-4. 响应中有没有敏感字段？（password、token、余额...）
-
-### 遇到"认证类"接口时
-
-当你发现登录、注册接口时：
+### 认证测试检查清单
 
 ```
-思考：认证机制安全吗？能绕过吗？能枚举用户吗？
+## 认证端点测试清单
+
+### 基础信息收集
+- [ ] 记录完整的登录URL
+- [ ] 记录所有请求参数名
+- [ ] 拦截真实的登录请求
+- [ ] 分析请求头（Cookie、Token、Referer等）
+- [ ] 检查是否有JWT token及其签名算法
+
+### 弱密码测试
+- [ ] admin:admin
+- [ ] admin:123456
+- [ ] admin:admin123
+- [ ] admin:password
+- [ ] test:test
+- [ ] 空密码
+- [ ] 只有用户名
+- [ ] 只有密码
+
+### SQL注入测试
+- [ ] ' OR '1'='1
+- [ ] admin'--
+- [ ] ' OR 1=1--
+- [ ] admin"/*
+- [ ] admin' OR '1'='1'#
+
+### 用户枚举测试
+- [ ] 测试存在的用户名
+- [ ] 测试不存在的用户名
+- [ ] 对比响应差异
+- [ ] 记录不同的错误消息
+
+### 手动验证
+- [ ] 上述测试是否触发了账户锁定？
+- [ ] 是否有验证码？如何处理？
+- [ ] 是否有其他认证方式？
 ```
 
-**推理步骤：**
-1. 不带认证信息能访问吗？
-2. 伪造token能通过吗？（JWT alg:none）
-3. 用户不存在时的响应有区别吗？（用户枚举）
-4. 有短信验证码吗？能轰炸吗？
-
-### 遇到"资金/订单类"接口时
-
-当你发现支付、退款、订单接口时：
+### SQL注入检查清单
 
 ```
-思考：钱能转走吗？订单能篡改吗？能刷单吗？
+## SQL注入测试清单
+
+### 注入点识别
+- [ ] URL参数中的ID
+- [ ] POST body参数
+- [ ] Header参数
+- [ ] Cookie参数
+
+### 布尔盲注测试
+- [ ] ' OR '1'='1
+- [ ] ' AND '1'='1
+- [ ] ' OR 1=1--
+- [ ] ' AND 1=2--
+
+### 时间盲注测试
+- [ ] ' AND SLEEP(5)--
+- [ ] ' AND (SELECT COUNT(*) FROM information_schema.tables) > 0--
+
+### 报错注入测试
+- [ ] ' AND EXTRACTVALUE(1, CONCAT(0x7e, DATABASE()))
+- [ ] ' AND updatexml(1, CONCAT(0x7e, VERSION()))
+
+### 验证记录
+- [ ] 响应时间差异
+- [ ] SQL错误消息
+- [ ] 响应内容差异
 ```
 
-**推理步骤：**
-1. 订单归属校验了吗？（用A的token能操作B的订单吗？）
-2. 金额能篡改吗？（改成0.01）
-3. 退款接口需要什么权限？能绕过吗？
-
-## 敏感信息识别
-
-### 必须识别这些敏感字段
+### IDOR检查清单
 
 ```
-password      → 不应返回前端
-token         → 可能存在泄露
-secretKey     → 不应暴露
-apiKey        → 不应暴露
-balance       → 可能存在越权
-orderNo       → 可能被篡改
-userId        → 可用于越权测试
-phone         → 可用于用户枚举
-email         → 可用于钓鱼
+## IDOR越权测试清单
+
+### 资源标识识别
+- [ ] userId
+- [ ] orderId
+- [ ] accountId
+- [ ] 任何可预测的ID
+
+### 水平越权测试
+- [ ] 用用户A的token访问用户B的资源
+- [ ] 修改请求中的ID为他人ID
+- [ ] 测试ID可遍历范围
+
+### 垂直越权测试
+- [ ] 普通用户token访问管理员接口
+- [ ] 测试权限提升操作
+
+### 验证记录
+- [ ] 是否返回了他人数据
+- [ ] 响应是否有权限提示
+- [ ] 是否需要原用户token
 ```
 
-### 响应类型分类
-
-| 响应类型 | 特征 | 含义 |
-|----------|------|------|
-| JSON对象 | `{"code":200,"data":{...}}` | 真实API响应 |
-| JSON数组 | `[{..."id":1,...}]` | 真实数据列表 |
-| HTML页面 | `<!DOCTYPE html>...` | SPA路由/WAF/错误页 |
-| 空响应 | 长度<50字节 | 可能是错误/空数据 |
-| 重定向 | HTTP 301/302 | 需要认证/跳转 |
-
-### 响应类型处理流程
+### JWT检查清单
 
 ```
-发现HTML响应时：
-1. 添加标准Header重试：
-   - APP-ID
-   - TRANSACTION-ID
-   - REQ-TIME
-   - Content-Type
-   
-2. 尝试不同的Content-Type：
-   - application/json
-   - application/x-www-form-urlencoded
-   
-3. 尝试GET/POST不同方法
+## JWT测试清单
 
-4. 多次测试确认是WAF还是需要认证
+### Token结构分析
+- [ ] 提取JWT token
+- [ ] 分析Header（alg字段）
+- [ ] 分析Payload（敏感字段检查）
+
+### 签名算法攻击
+- [ ] alg: none → 删除签名部分
+- [ ] alg: HS256 → 使用公钥签名
+
+### 敏感信息检查
+- [ ] payload中是否包含password？
+- [ ] payload中是否包含secret？
+- [ ] payload中是否包含apiKey？
+
+### Token滥用测试
+- [ ] token是否有过期时间？
+- [ ] token是否可以重复使用？
+- [ ] 修改userId后token是否有效？
 ```
 
-### 发现JSON响应后的分析
+### 敏感信息检查清单
 
 ```
-发现敏感信息立即利用：
-1. 发现 communityId → 利用ID测试越权/注入
-2. 发现内网地址 → 测试SSRF
-3. 发现 URL → 测试关联系统
-4. 发现 token → 测试其他接口
+## 敏感信息泄露检查清单
+
+### 认证信息
+- [ ] password
+- [ ] token
+- [ ] secretKey
+- [ ] apiKey
+
+### 业务数据
+- [ ] balance（余额）
+- [ ] orderNo（订单号）
+- [ ] phone（手机号）
+- [ ] email（邮箱）
+- [ ] idCard（身份证）
+
+### 内部信息
+- [ ] 内网IP
+- [ ] 数据库连接信息
+- [ ] 内部系统URL
+- [ ] 调试接口
 ```
+
+### 文件上传检查清单
+
+```
+## 文件上传测试清单
+
+### 基础测试
+- [ ] 上传正常文件（.txt, .jpg）
+- [ ] 上传脚本文件（.php, .jsp）
+- [ ] 上传双重扩展名（.php.jpg）
+- [ ] 上传大文件（>1MB）
+
+### 恶意文件测试
+- [ ] webshell.php
+- [ ] webshell.jsp
+- [ ] 嵌入XSS的.html
+- [ ] 包含路径遍历的文件名
+
+### 验证检查
+- [ ] 未登录时是否允许上传？
+- [ ] 登录后是否可以上传任意文件？
+- [ ] 文件类型验证是否在服务端？
+- [ ] 上传后的文件是否可访问？
+```
+
+---
+
+## 推理引擎
+
+### 现象推理系统
+
+当遇到特定现象时，按以下思路分析：
+
+#### 场景1: 所有API返回HTML
+
+```
+**现象**:
+- GET /api/user/info 返回HTML
+- POST /api/login 返回HTML
+- 所有端点都返回相同的HTML
+
+**推理路径**:
+1. 这是什么情况？
+   → 可能是SPA前端路由fallback
+   → 也可能是Nginx配置问题
+
+2. 如何验证？
+   → 检查响应内容是否相同
+   → 查看是否有Vue/React特征
+   → 检查响应长度
+
+3. 如果确实是SPA fallback？
+   → 不能直接测试API
+   → 需要从JS中提取真实API地址
+   → 需要使用浏览器工具
+```
+
+#### 场景2: 响应返回统一的错误格式
+
+```
+**现象**:
+{"code": 1996, "message": "没有有效的登录凭证或未登录"}
+
+**推理路径**:
+1. 这说明什么？
+   → 有统一的认证保护
+   → 错误处理机制完善
+
+2. code: 1996 是什么意思？
+   → 可能是业务定义的错误码
+   → 需要查看文档或代码
+
+3. 如何绕过？
+   → 需要有效的认证token
+   → 尝试从其他地方获取token
+   → 测试token是否可以复用
+```
+
+---
+
+## 知识库
+
+### 攻击模式库
+
+#### SQL注入攻击模式
+
+**常见错误消息**:
+- "You have an error in your SQL syntax"
+- "Warning: mysql_fetch_array()"
+- "ORA-01756: not a valid integer"
+- "Unclosed quotation mark"
+
+**测试Payload**:
+```
+# 布尔盲注
+' OR '1'='1
+' AND '1'='1
+' OR 1=1--
+
+# 时间盲注
+' AND SLEEP(5)--
+' AND (SELECT COUNT(*) FROM information_schema.tables) > 0--
+
+# 报错注入
+' AND EXTRACTVALUE(1, CONCAT(0x7e, DATABASE()))
+' AND updatexml(1, CONCAT(0x7e, VERSION()))
+```
+
+**判断技巧**:
+- 响应时间明显不同 → 可能存在时间盲注
+- 响应包含SQL错误 → 可能存在报错注入
+- 响应完全相同 → 可能被过滤
+
+#### JWT攻击模式
+
+**alg: none 攻击**
+
+原理: 将JWT的签名算法设置为none
+
+测试步骤:
+1. 修改JWT header部分: `{"alg": "none", "typ": "JWT"}`
+2. 保留payload部分
+3. 移除signature部分
+
+判断: 服务器是否接受无效签名
+
+**敏感信息泄露检查**:
+- [ ] payload中是否包含password？
+- [ ] payload中是否包含secret？
+- [ ] payload中是否包含apiKey？
+
+#### 配置文件常见路径
+
+```
+/api/config
+/actuator/env
+/application.properties
+/config.json
+```
+
+**敏感信息**:
+- 数据库连接字符串
+- API密钥
+- 加密密钥
+- 第三方凭证
+
+---
+
+## 测试记录系统
+
+### 记录格式模板
+
+#### 假设记录
+```
+时间: 2026-04-06 22:45:00
+假设: 登录接口可能存在SQL注入
+依据: 响应时间差异
+状态: 待验证
+```
+
+#### 测试记录
+```
+时间: 2026-04-06 22:46:00
+测试: POST /api/login
+Payload: {"username": "admin'", "password": "test"}
+结果: HTTP 500
+状态: 需要服务器日志确认
+```
+
+#### 发现记录
+```
+时间: 2026-04-06 22:47:00
+类型: 信息泄露
+端点: /api/config
+详情: 暴露内网IP 192.168.1.100
+严重程度: 中等
+```
+
+---
 
 ## 漏洞验证闭环
 
@@ -388,569 +554,42 @@ email         → 可用于钓鱼
 □ 维度10: 信息泄露 - 是否泄露非公开信息？
 ```
 
-### 常见误报识别
+---
+
+## SPA应用引导流程
+
+### 阶段1: 判断是否SPA
 
 ```
-这些不是漏洞（识别为误报）：
-1. HTTP 200 返回 HTML 页面
-   → 可能是WAF拦截页/SPA路由/默认错误页
-   → 验证：是否是JSON格式的业务数据？
+判断依据：
+- /api/* 返回HTML → 可能是SPA
+- HTML包含JS chunk路径 → Vue/React应用
+- 响应头Server字段 → nginx反向代理
 
-2. 响应长度完全相同但返回"登录失效"
-   → 说明后端有正确的认证检查
-   → 不是漏洞，是安全防护有效
-
-3. 所有ID查询返回相同响应
-   → 可能是统一错误处理
-   → 验证：是否真的返回了不同的业务数据？
+如果不是SPA：
+→ 跳过JS采集阶段
+→ 直接探测API端点
 ```
 
-## 漏洞链构造思维
+### 阶段2: JS采集引导
 
-### 发现用户枚举后的推理
-
-```
-你发现的：GET /api/user/check?phone=138xxx 返回 userId
-
-利用链：
-1. 收集更多userId → 批量探测手机号
-2. 用userId查更多信息 → GET /api/user/info?userId=xxx
-3. 尝试修改他人资料 → POST /api/user/update
-4. 查看他人订单 → GET /api/order/list?userId=xxx
-5. 尝试退款 → POST /api/refund (用他人的orderNo)
-
-最终：用户枚举 → 获取userId → 查订单 → 退款
-```
-
-### 发现token泄露后的推理
+**【强制】必须使用Playwright**
 
 ```
-你发现的：{"token": "xxx", "userId": 123}
+采集步骤：
+1. 启动Playwright - ignore_https_errors=True
+2. 访问目标 - wait_until=networkidle
+3. 拦截请求 - page.on('request')捕获XHR/Fetch
+4. 用户交互 - 点击、滚动、表单填写
+5. 采集敏感信息 - cookies、localStorage
 
-利用链：
-1. token有效吗？ → 用token访问其他接口
-2. 能访问admin接口吗？ → GET /api/admin/xxx
-3. token能用于其他用户吗？ → 改userId重放
-
-最终：token泄露 → 用token访问敏感接口 → 越权操作
+【禁止降级】绝对不允许：
+- 不能降级到 selenium
+- 不能降级到 pyppeteer
+- 不能降级到 requests 静态解析
 ```
 
-### 发现Header/参数后的推理
-
-```
-你发现的：标准Header包含 APP-ID、TRANSACTION-ID
-
-利用链：
-1. Header有效吗？ → 用Header构造请求获取JSON响应
-2. Header组合正确吗？ → 测试缺少某个Header
-3. Header值可控吗？ → 测试注入点
-
-验证步骤：
-1. 保留所有Header，直接访问接口
-2. 逐个移除Header测试哪个是必需的
-3. 收集Header值用于后续请求
-```
-
-### 发现敏感ID后的推理
-
-```
-你发现的：communityId、companyId、userId等
-
-利用链：
-1. ID有效吗？ → 用ID查询相关接口
-2. ID可遍历吗？ → 测试IDOR漏洞
-3. ID可注入吗？ → 测试SQL/NoSQL注入
-
-验证步骤：
-1. GET /app/xxx.list?communityId=XXX
-2. GET /app/xxx.list?communityId=其他人的ID
-3. POST /app/xxx/add communityId注入测试
-```
-
-### 发现多系统URL后的推理
-
-```
-你发现的：多个内部系统URL（主系统、物业系统、业主系统、OSS等）
-
-利用链：
-1. 系统间关联？ → 是否共享Session/Token？
-2. OSS权限？ → 测试读取/写入权限
-3. 内网地址？ → SSRF测试
-
-验证步骤：
-1. 访问发现的URL测试可访问性
-2. 测试系统间Session共享
-3. OSS测试上传/读取/列目录
-```
-
-### 发现登录接口后的推理
-
-```
-你发现的：POST /callComponent/login/doLogin
-
-利用链：
-1. 用户存在性？ → 错误消息差异判断
-2. 密码可爆破吗？ → 锁定机制绕过
-3. 无效密码后锁ID可绕过？ → 换账号继续
-
-验证步骤：
-1. 测试响应差异：
-   - "用户或密码错误" → 用户存在（可疑）
-   - "用户不存在" → 用户不存在
-   - "登陆错误次数过多" → 账号已锁定
-2. 账号锁定后换账号继续爆破
-3. 收集有效账号尝试其他系统
-```
-
-### 利用链推理提示词模板
-
-当发现多个漏洞时，按以下模板进行利用链分析：
-
-#### 模板1：认证类漏洞利用链
-
-```
-发现的漏洞：
-- 登录接口无验证码
-- 暴力破解可获取有效账号
-
-利用链推理：
-1. 使用暴力破解获取有效账号 → 记录账号密码
-2. 使用有效账号登录 → 获取 JWT Token
-3. 使用 Token 访问敏感接口 → 测试越权操作
-4. 越权访问获取更多数据 → 扩大攻击面
-
-验证步骤：
-- 使用获取的 Token 请求 /api/admin/user/list
-- 如果返回用户数据，说明 Token 有效且可利用
-```
-
-#### 模板2：用户枚举 + IDOR 利用链
-
-```
-发现的漏洞：
-- 用户存在/不存在响应不同（用户枚举）
-- 查询接口存在 IDOR
-
-利用链推理：
-1. 用户枚举获取 userId 列表
-2. 使用 userId 遍历查询接口
-3. 如果能查到他人数据，说明存在 IDOR
-
-验证步骤：
-- 使用不同 userId 请求 /api/user/profile?userId=X
-- 对比返回数据是否属于不同用户
-```
-
-#### 模板3：敏感信息泄露 + 认证绕过
-
-```
-发现的漏洞：
-- 某接口返回敏感信息（如 password）
-- 另一接口存在认证绕过
-
-利用链推理：
-1. 认证绕过获取初始访问
-2. 利用敏感信息泄露获取更多凭证
-3. 组合利用扩大攻击面
-
-验证步骤：
-- 绕过认证访问 /api/info 获取数据
-- 检查响应中是否包含可利用的凭证
-```
-
-#### 通用利用链验证格式
-
-```
-漏洞利用链：
-1. [漏洞A] → [漏洞B] → [漏洞C]
-   - 漏洞A: 具体描述
-   - 漏洞B: 基于A的结果能做什么
-   - 漏洞C: 最终能获取什么
-
-2. 验证记录：
-   - Step 1: 执行的操作
-   - Step 2: 返回的结果
-   - Step 3: 是否成功利用
-```
-
-## SPA应用完整采集流程
-
-### 阶段1：基础探测
-```
-1. HTTP探测目标可访问性
-   curl -I http://target.com
-   
-2. 技术栈识别
-   - 检查响应头Server字段
-   - 检查HTML中是否包含Vue/React/Angular关键词
-   - 检查是否包含webpack chunk引用
-   
-3. 判断是否是SPA应用
-   - /api/* 返回HTML → SPA
-   - HTML包含JS chunk路径 → Vue/React应用
-```
-
-### 阶段2：JS采集【强制·禁止降级】
-
-**【强制要求】必须使用Playwright，禁止降级到其他方案**
-
-```python
-# 1. 必须使用Playwright访问目标
-from playwright.sync_api import sync_playwright
-
-with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True)
-    context = browser.new_context(ignore_https_errors=True)  # 处理HTTPS证书
-    page = context.new_page()
-    
-    # 2. 访问目标并等待网络空闲
-    page.goto(url, wait_until="networkidle", timeout=60000)
-    page.wait_for_timeout(5000)  # 等待JS完全执行
-    
-    # 3. 拦截所有请求
-    def log_request(request):
-        ALL_TRAFFIC.append({
-            'url': request.url,
-            'method': request.method,
-            'type': request.resource_type
-        })
-    page.on('request', log_request)
-    
-    # 4. 模拟用户交互
-    page.click('body')  # 点击触发
-    page.wait_for_timeout(1000)
-    page.evaluate('window.scrollTo(0, document.body.scrollHeight)')  # 滚动触发懒加载
-    page.wait_for_timeout(2000)
-    
-    # 5. 采集敏感信息
-    cookies = context.cookies()
-    local_storage = page.evaluate('Object.keys(localStorage)')
-    
-# 【禁止降级采集阶段】
-# ❌ 不能使用 selenium 采集JS
-# ❌ 不能使用 pyppeteer 采集JS
-# ✅ 分析阶段允许使用curl
-```
-
-### 阶段3：JS深度分析（AST+正则双模式提取）
-
-**【关键】必须使用AST+正则双模式进行深度分析**
-
-```bash
-# 分析阶段允许使用curl进行补充
-curl -sk "https://target.com/js/app.js" -o app.js
-```
-
-1. 提取baseURL配置（最优先！）
-   patterns:
-   - r'baseURL\s*[:=]\s*["\']([^"\']+)["\']'
-   - r'axios\.create\s*\(\s*\{([^}]+)\}'
-   
-   重要发现：
-   - baseURL:"" 为空 → 使用相对路径 + nginx代理
-   - baseURL:"https://api.xxx.com" → 使用配置的域名前缀
-   - baseURL不存在 → 使用同源请求
-
-2. 正则模式（快速提取）
-   patterns:
-   - r'["\'](/(?:user|auth|admin|login|logout|api|v\d|frame)[^"\']*)["\']'
-   - r'axios\.[a-z]+\(["\']([^"\']+)["\']'
-   - r'fetch\(["\']([^"\']+)["\']'
-   - r'\.get\(["\']([^"\']+)["\']'
-   - r'\.post\(["\']([^"\']+)["\']'
-   
-3. 【重要】递归分析所有 chunk 文件
-   - webpack 打包的应用会将代码分散到多个 chunk 文件中
-   - 大 chunk 文件（>50KB）通常包含更多业务逻辑
-
-4. 敏感信息提取
-   - IP地址: r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
-   - 外部域名: 从URL中提取netloc
-   - 凭证信息:
-     * api_key, secret_key: r'(?:api[_-]?key|secret[_-]?key)\s*[:=]\s*["\']([^"\']+)["\']'
-     * token: r'(?:access[_-]?token|Bearer)\s+([a-zA-Z0-9\-_\.]+)'
-```
-
-### 阶段4：API测试
-```
-1. 确定base_path（关键！找不到时使用字典）
-   
-   base_path获取优先级:
-   1. baseURL配置 → 直接使用
-   2. nginx反向代理推测 → 从响应头Server字段分析
-   3. 使用字典 fallback:
-   
-   # 常见API前缀/父路径字典
-   common_api_prefixes = [
-       "/api", "/api/v1", "/api/v2", "/api/v3",
-       "/webapi", "/openapi", "/rest", "/rest/api",
-       "/admin", "/manager", "/backend", "/server",
-       "/user", "/auth", "/oauth", "/public",
-   ]
-   
-2. 逐个测试发现的API端点
-   - GET请求：检查Content-Type和响应内容
-   - POST请求：测试登录接口（SQL注入/XSS）
-   
-3. 判断响应类型
-   - application/json → 真实API
-   - text/html → SPA路由或WAF拦截
-```
-
-### 阶段5：漏洞验证
-```
-□ 维度1: 响应类型 - 是JSON还是HTML？
-□ 维度2: 状态码 - 是否合理？
-□ 维度3: 响应长度 - 是否过短？
-□ 维度4: WAF拦截 - 是否为WAF？
-□ 维度5: 敏感信息 - 是否包含password/token？
-□ 维度6: 一致性 - 多次请求是否一致？
-□ 维度7: SQL注入 - 是否包含SQL错误？
-□ 维度8: IDOR - 是否返回用户数据？
-□ 维度9: 认证绕过 - 是否返回token？
-□ 维度10: 信息泄露 - 是否泄露非公开信息？
-```
-
-## 特殊情况处理
-
-### 遇到WAF/安全设备时
-```
-识别特征：
-- 所有请求返回相似的HTML页面
-- 响应包含"拦截"、"安全"、"访问受限"等关键词
-- 响应内容与实际API无关
-
-处理方法：
-1. 识别为WAF拦截，不是漏洞
-2. 记录"存在WAF防护"作为安全能力
-3. 可以尝试降低请求频率绕过
-
-判断逻辑：
-- 请求1: 返回业务JSON = 正常
-- 请求2: 返回HTML拦截页 = WAF
-- 请求3: 返回业务JSON = 恢复
-```
-
-### 遇到SPA应用时
-```
-识别特征：
-- /api/* 路径返回HTML页面
-- 响应内容是前端框架代码
-- 不是真实的API端点
-
-处理方法：
-1. 通过JS源码分析获取真实API配置
-2. 使用无头浏览器触发动态API请求
-3. 不要对SPA路由的/api/*路径直接测试
-
-判断逻辑：
-- GET /api/user/info 返回HTML = SPA前端路由
-- GET /api/user/info 返回JSON = 真实API
-```
-
-## 核心模块能力池 (core/)
-
-> **重要：能力池只作为参考，不是固定流程**
-> - 根据目标站点特点选择合适的模块
-> - 根据测试阶段动态调整
-> - 可以只用部分模块，也可以组合使用
-
-### 目录结构
-
-```
-core/                              # 核心能力池（原子化）
-├── collectors/                     # 信息采集能力
-│   ├── http_client.py            # HTTP请求能力
-│   ├── js_parser.py              # JS源码解析（AST+正则）
-│   ├── browser_collect.py         # 无头浏览器采集
-│   ├── js_collector.py           # JS采集
-│   ├── browser_collector.py       # 浏览器采集
-│   ├── url_collector.py          # URL采集
-│   └── api_path_finder.py        # API路径发现
-├── analyzers/                     # 分析能力
-│   ├── api_parser.py             # API端点解析
-│   ├── response_analyzer.py       # 响应类型分析
-│   └── sensitive_finder.py       # 敏感信息发现
-├── testers/                       # 测试能力
-│   ├── sqli_tester.py           # SQL注入测试
-│   ├── idor_tester.py           # 越权测试
-│   ├── auth_tester.py           # 认证测试
-│   ├── jwt_tester.py            # JWT测试
-│   ├── fuzz_tester.py            # 模糊测试
-│   ├── api_fuzzer.py           # API模糊测试
-│   └── browser_tester.py        # 浏览器测试
-├── verifiers/                    # 验证能力
-│   ├── vuln_verifier.py         # 漏洞验证（10维度）
-│   └── response_diff.py         # 响应差异对比
-├── utils/                        # 工具能力
-│   ├── prerequisite.py          # 依赖检查
-│   ├── payload_lib.py           # Payload库
-│   └── base_path_dict.py        # API base path字典
-└── advanced/                     # 高级能力
-    ├── advanced_recon.py        # 高级侦察
-    ├── agentic_analyzer.py       # 智能分析
-    ├── dynamic_api_analyzer.py   # 动态API分析
-    ├── cloud_storage_tester.py   # 云存储测试
-    ├── context_manager.py        # 上下文管理
-    ├── orchestrator.py           # 编排器
-    ├── reasoning_engine.py       # 推理引擎
-    ├── strategy_pool.py          # 策略池
-    ├── scan_engine.py            # 扫描引擎
-    └── testing_loop.py           # 测试循环
-```
-
-### 能力池模块参考
-
-| 阶段 | 可用模块 | 使用场景 | 必须 |
-|------|----------|----------|------|
-| **采集【禁止降级】** | | | |
-| | `browser_collect.py` | SPA应用必须使用Playwright，禁止降级！ | ✅ |
-| | `js_parser.py` | 从JS提取API，使用AST+正则双模式 | ✅ |
-| **分析【允许降级】** | | | |
-| | `sensitive_finder.py` | 提取password/token/密钥等敏感字段 | |
-| | `response_analyzer.py` | 分析响应类型，识别JSON/HTML/WAF | |
-| | `curl` | 允许使用curl进行补充分析 | 允许 |
-| **测试** | | | |
-| | `sqli_tester.py` | SQL注入测试 | |
-| | `idor_tester.py` | 越权测试 | |
-| | `auth_tester.py` | 认证绕过测试 | |
-| | `jwt_tester.py` | JWT漏洞测试 | |
-| | `api_fuzzer.py` | API端点fuzzing | |
-| | `browser_tester.py` | DOM XSS，浏览器环境测试 | |
-| **验证** | | | |
-| | `vuln_verifier.py` | 10维度漏洞验证 | ✅ |
-| | `response_diff.py` | 响应对比，排除误报 | |
-| **辅助** | | | |
-| | `base_path_dict.py` | 找不到baseURL时，fuzzing父路径 | ✅ |
-| | `prerequisite.py` | 依赖检查，工具可用性验证 | ✅ |
-| **编排【自动化】** | | | |
-| | `orchestrator.py` | 智能编排器，集成所有组件自动执行 | 推荐 |
-
-## 自动化编排执行
-
-### 使用编排器进行自动化测试
-
-当需要全面自动化测试时，可直接调用 `orchestrator.py`：
-
-```python
-# 导入编排器
-import sys
-sys.path.insert(0, '/workspace/api-security-testing-refactored')
-
-from core.orchestrator import EnhancedAgenticOrchestrator, run_enhanced_agentic_test
-
-# 方式1: 使用高级函数（推荐）
-result = run_enhanced_agentic_test(
-    target='https://target.com',
-    max_iterations=100,
-    max_duration=3600.0
-)
-
-# 方式2: 直接使用编排器
-orchestrator = EnhancedAgenticOrchestrator('https://target.com')
-result = orchestrator.execute(
-    max_iterations=100,
-    max_duration=3600.0,
-    enable_fuzzing=True,
-    enable_testing=True
-)
-
-# 输出报告
-print(result)
-```
-
-### 编排器集成组件
-
-```
-orchestrator.py 集成以下核心组件：
-
-┌─────────────────────────────────────────────────────────────┐
-│  EnhancedAgenticOrchestrator                               │
-├─────────────────────────────────────────────────────────────┤
-│  ├── Reasoner (推理引擎)                                   │
-│  │   └── 多层级推理、洞察生成、阻碍因素识别                 │
-│  ├── ContextManager (上下文管理器)                          │
-│  │   └── 技术栈、网络、安全上下文维护                      │
-│  ├── StrategyPool (策略池)                                  │
-│  │   └── 测试策略选择、动态调整                            │
-│  └── TestingLoop (测试循环)                                 │
-│      └── 洞察驱动测试、持续迭代                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 编排器执行阶段
-
-```
-阶段1: 侦察 (Reconnaissance)
-  - HTTP探测目标可访问性
-  - 技术栈识别
-  - Swagger/API文档发现
-
-阶段2: 上下文分析 (Context Analysis)
-  - 分析观察结果
-  - 更新技术栈上下文
-  - 识别SPA模式和API指标
-
-阶段3: API发现 (Discovery)
-  - V35JSAnalyzer JS文件分析
-  - Swagger文档解析
-  - 智能猜测常见API路径
-
-阶段4: 推理分析 (Reasoning)
-  - 生成洞察
-  - 选择测试策略
-  - 创建测试计划
-
-阶段5: 智能Fuzzing (可选)
-  - 高价值端点模糊测试
-  - 响应分析
-
-阶段6: 漏洞测试 (Testing)
-  - 洞察驱动测试循环
-  - 漏洞发现和验证
-```
-
-### 编排器返回结果
-
-```python
-{
-    'target': 'https://target.com',
-    'duration': 123.45,  # 执行时长(秒)
-    'early_termination': None,  # 或 'blocked'/'rate_limited'
-    'components': {
-        'reasoner': {
-            'total_insights': 50,
-            'active_insights': 15
-        },
-        'context_manager': {
-            'tech_stack': {...},
-            'endpoints_discovered': 30
-        },
-        'strategy_pool': {
-            'strategies': 5,
-            'selected': 'aggressive'
-        }
-    },
-    'stage_results': {
-        'reconnaissance': {...},
-        'context_analysis': {...},
-        'discovery': {...},
-        'reasoning': {...},
-        'fuzzing': {...},
-        'testing': {...}
-    },
-    'insights': [...],  # 所有洞察
-    'blockers': [...],  # 阻碍因素
-    'opportunities': [...]  # 机会点
-}
-```
-
-### 手动模式 vs 编排器模式
-
-| 模式 | 适用场景 | 优点 |
-|------|----------|------|
-| **手动模式** | 精细测试、需要Agent判断 | 灵活、可控 |
-| **编排器模式** | 全面扫描、自动化测试 | 高效、可重复 |
+---
 
 ## 参考资源
 
@@ -958,50 +597,50 @@ orchestrator.py 集成以下核心组件：
 
 | 文档 | 内容 | 使用时机 |
 |------|------|----------|
-| `workflows.md` | 完整扫描流程 | 整体流程参考 |
+| `workflows.md` | 完整扫描流程参考 | 整体流程参考 |
 | `rest-guidance.md` | REST API 测试指导 | 测试 REST API 时 |
 | `graphql-guidance.md` | GraphQL 测试指导 | 测试 GraphQL API 时 |
-| `asset-discovery.md` | 资产发现方法论 | 阶段1 资产收集 |
 | `test-matrix.md` | 测试矩阵 | 选择测试方法 |
-| `validation.md` | 漏洞验证标准 | 阶段5 漏洞验证 |
+| `validation.md` | 漏洞验证标准 | 漏洞验证参考 |
 | `severity-model.md` | 严重性分级模型 | CVSS 评分定级 |
-| `vulnerabilities/01-sqli-tests.md` | SQL注入测试方法 | 测试SQL注入时 |
-| `vulnerabilities/02-user-enum-tests.md` | 用户枚举测试方法 | 测试用户枚举时 |
-| `vulnerabilities/03-jwt-tests.md` | JWT认证测试方法 | 测试JWT时 |
-| `vulnerabilities/04-idor-tests.md` | IDOR越权测试 | 测试越权时 |
-| `vulnerabilities/05-sensitive-data-tests.md` | 敏感信息泄露测试 | 测试信息泄露时 |
-| `vulnerabilities/06-biz-logic-tests.md` | 业务逻辑漏洞测试 | 测试业务逻辑时 |
-| `vulnerabilities/08-brute-force-tests.md` | 暴力破解测试 | 测试认证爆破时 |
-| `vulnerabilities/09-vulnerability-chains.md` | 漏洞关联联想 | 阶段5 利用链构造 |
-| `vulnerabilities/10-auth-tests.md` | 认证测试扩展 | 测试认证时 |
-| `vulnerabilities/11-graphql-tests.md` | GraphQL测试 | 测试GraphQL API时 |
-| `vulnerabilities/12-ssrf-tests.md` | SSRF测试 | 测试SSRF时 |
-| `fuzzing-patterns.md` | Fuzzing字典 | 阶段3 端点探测 |
-| `report-template.md` | 报告模板 | 阶段6 生成报告 |
-| `pua-agent.md` | PUA Agent说明 | 自主深入测试 |
 
-### scripts/ 自动化脚本
+### references/vulnerabilities/ 漏洞知识库
 
-| 脚本 | 功能 |
+| 文档 | 内容 |
 |------|------|
-| `js_collector.py` | 强制Playwright采集，失败则报错 |
-| `auth_bypass_tester.py` | 认证绕过测试矩阵 |
+| `01-sqli-tests.md` | SQL注入测试方法与Payload |
+| `02-user-enum-tests.md` | 用户枚举测试方法 |
+| `03-jwt-tests.md` | JWT认证测试方法 |
+| `04-idor-tests.md` | IDOR越权测试 |
+| `05-sensitive-data-tests.md` | 敏感信息泄露测试 |
+| `06-biz-logic-tests.md` | 业务逻辑漏洞测试 |
+| `07-security-config-tests.md` | 安全配置测试 |
+| `08-brute-force-tests.md` | 暴力破解测试 |
+| `09-vulnerability-chains.md` | 漏洞关联与利用链 |
+| `10-auth-tests.md` | 认证测试扩展 |
+| `11-graphql-tests.md` | GraphQL测试 |
+| `12-ssrf-tests.md` | SSRF测试 |
 
-### examples/ 示例
+---
 
-| 示例 | 内容 |
-|------|------|
-| `security-report-example.md` | 安全报告示例 |
-| `detailed-vulnerability-chains.md` | 详细漏洞链案例 |
-| `vulnerability-cases.md` | 漏洞案例 |
-| `usage-examples.md` | 使用示例 |
-| `environment-simulation.md` | 环境模拟 |
-| `v55_perfect_report.md` | 完美报告模板 (v5.5) |
+## 验收标准
 
-### resources/ 资源文件
+### 功能验收
 
-| 资源 | 内容 |
-|------|------|
-| `sqli.json` | SQL注入Payload库 |
-| `xss.json` | XSS Payload库 |
-| `dom_xss.json` | DOM XSS Payload库 |
+- [ ] 提供至少5种场景的决策树引导
+- [ ] 提供至少6种类型的检查清单
+- [ ] 推理引擎能识别常见现象
+- [ ] 知识库包含主流攻击模式
+
+### 质量验收
+
+- [ ] 文档清晰易懂
+- [ ] 示例代码可用
+- [ ] 学习曲线平缓
+- [ ] 支持自定义扩展
+
+### 实用性验收
+
+- [ ] 能帮助发现真实漏洞
+- [ ] 能提高测试效率
+- [ ] 能传承测试经验
