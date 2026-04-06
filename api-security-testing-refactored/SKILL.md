@@ -653,7 +653,7 @@ email         → 可用于钓鱼
 
 ---
 
-## SPA应用引导流程
+## SPA应用采集流程
 
 ### 阶段1: 判断是否SPA
 
@@ -664,22 +664,313 @@ email         → 可用于钓鱼
 - 响应头Server字段 → nginx反向代理
 ```
 
-### 阶段2: JS采集引导
+### 阶段2: JS采集【强制·禁止降级】
 
-**【强制】必须使用Playwright**
+**【强制要求】必须使用Playwright**
 
 ```
 采集步骤：
 1. 启动Playwright - ignore_https_errors=True
 2. 访问目标 - wait_until=networkidle
-3. 拦截请求 - page.on('request')捕获XHR/Fetch
-4. 用户交互 - 点击、滚动、表单填写
-5. 采集敏感信息 - cookies、localStorage
+3. 等待加载 - page.wait_for_timeout(5000)
+4. 拦截请求 - page.on('request')捕获XHR/Fetch
+5. 用户交互 - 点击、滚动、表单填写
+6. 采集敏感信息 - cookies、localStorage、响应头
 
 【禁止降级】绝对不允许：
 - 不能降级到 selenium
 - 不能降级到 pyppeteer
 - 不能降级到 requests 静态解析
+```
+
+### 阶段3: JS深度分析（AST+正则双模式）
+
+**【关键】必须使用AST+正则双模式进行深度分析**
+
+```
+1. 提取baseURL配置（最优先！）
+   patterns:
+   - r'baseURL\s*[:=]\s*["\']([^"\']+)["\']'
+   - r'axios\.create\s*\(\s*\{([^}]+)\}'
+   
+   重要发现：
+   - baseURL:"" 为空 → 使用相对路径 + nginx代理
+   - baseURL:"https://api.xxx.com" → 使用配置的域名前缀
+   - baseURL不存在 → 使用同源请求
+
+2. 正则模式（快速提取）
+   patterns:
+   - r'["\'](/(?:user|auth|admin|login|logout|api|v\d|frame)[^"\']*)["\']'
+   - r'axios\.[a-z]+\(["\']([^"\']+)["\']'
+   - r'fetch\(["\']([^"\']+)["\']'
+   - r'\.get\(["\']([^"\']+)["\']'
+   - r'\.post\(["\']([^"\']+)["\']'
+   
+3. 【重要】递归分析所有 chunk 文件
+   - webpack 打包的应用会将代码分散到多个 chunk 文件中
+   - 大 chunk 文件（>50KB）通常包含更多业务逻辑
+
+4. 敏感信息提取
+   - IP地址: r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
+   - 外部域名: 从URL中提取netloc
+   - 凭证信息:
+     * api_key, secret_key: r'(?:api[_-]?key|secret[_-]?key)\s*[:=]\s*["\']([^"\']+)["\']'
+     * token: r'(?:access[_-]?token|Bearer)\s+([a-zA-Z0-9\-_\.]+)'
+```
+
+### 阶段4: API测试
+
+```
+1. 确定base_path（关键！找不到时使用字典）
+   
+   base_path获取优先级:
+   1. baseURL配置 → 直接使用
+   2. nginx反向代理推测 → 从响应头Server字段分析
+   3. 使用字典 fallback:
+   
+   # 常见API前缀/父路径字典
+   common_api_prefixes = [
+       "/api", "/api/v1", "/api/v2", "/api/v3",
+       "/webapi", "/openapi", "/rest", "/rest/api",
+       "/admin", "/manager", "/backend", "/server",
+       "/user", "/auth", "/oauth", "/public",
+   ]
+   
+2. 逐个测试发现的API端点
+   - GET请求：检查Content-Type和响应内容
+   - POST请求：测试登录接口（SQL注入/XSS）
+   
+3. 判断响应类型
+   - application/json → 真实API
+   - text/html → SPA路由或WAF拦截
+```
+
+### 阶段5: 漏洞验证
+```
+□ 维度1: 响应类型 - 是JSON还是HTML？
+□ 维度2: 状态码 - 是否合理？
+□ 维度3: 响应长度 - 是否过短？
+□ 维度4: WAF拦截 - 是否为WAF？
+□ 维度5: 敏感信息 - 是否包含password/token？
+□ 维度6: 一致性 - 多次请求是否一致？
+□ 维度7: SQL注入 - 是否包含SQL错误？
+□ 维度8: IDOR - 是否返回用户数据？
+□ 维度9: 认证绕过 - 是否返回token？
+□ 维度10: 信息泄露 - 是否泄露非公开信息？
+```
+
+---
+
+## Fuzzing策略
+
+### API前缀字典
+
+```python
+api_prefixes = [
+    # 已发现
+    "/api/admin", "/api/authority", "/api/system",
+    # 通用
+    "/api", "/api/v1", "/api/v2", "/api/v3", "/api/v4",
+    "/rest", "/rest/api", "/webapi",
+    # 认证
+    "/auth", "/oauth", "/oauth2", "/cas", "/sso",
+    # 管理
+    "/admin", "/admin/api", "/manager", "/backend",
+    # 协议
+    "/openapi", "/open/api", "/gateway", "/proxy",
+]
+```
+
+### API端点字典
+
+```python
+api_endpoints = [
+    # 通用 CRUD
+    "login", "logout", "register", "list", "add", "delete", "modify",
+    "getList", "getListOfPage", "detail", "getInfo", "profile",
+    # 用户相关
+    "user", "user/list", "user/add", "user/delete", "user/modify",
+    "user/profile", "user/restPassword", "user/enable", "user/disable",
+    # 角色权限
+    "role", "role/list", "role/add", "role/delete", "role/modify",
+    "menu", "menu/list", "menu/add", "menu/delete", "menu/modify",
+    # 文件操作
+    "file", "upload", "download", "import", "export",
+    "imgUpload", "avatar", "attachment",
+]
+```
+
+### 业务端点扩展模式
+
+```
+发现的模式: /{module}/{operation}
+可能存在的端点:
+- /{module}/list          → 列表查询
+- /{module}/add          → 新增创建
+- /{module}/modify       → 修改更新
+- /{module}/delete       → 删除操作
+- /{module}/detail       → 详情查看
+- /{module}/getInfo      → 信息获取
+- /{module}/export       → 导出数据
+- /{module}/import       → 导入数据
+
+发现的模式: /{resource}/{id}
+可能存在的端点:
+- GET  /{resource}/{id}     → 获取详情
+- PUT  /{resource}/{id}     → 完整更新
+- DELETE /{resource}/{id}   → 删除资源
+- PATCH /{resource}/{id}   → 部分更新
+```
+
+---
+
+## 常见漏洞模式识别
+
+### 用户相关漏洞模式
+
+```
+1. 用户信息泄露
+   特征：响应包含password、token
+   测试：不带认证访问
+
+2. 用户枚举
+   特征：用户存在/不存在响应不同
+   测试：探测不存在的手机号/邮箱
+
+3. 密码重置漏洞
+   特征：可通过phone/email重置
+   测试：尝试修改他人密码
+
+4. 越权访问
+   特征：通过参数切换用户
+   测试：修改userId/phone等参数
+```
+
+### 订单相关漏洞模式
+
+```
+1. 订单遍历
+   特征：参数化查询订单
+   测试：修改userId查他人订单
+
+2. 订单篡改
+   特征：订单金额可修改
+   测试：尝试amount=0.01
+
+3. 虚假订单
+   特征：可创建任意订单
+   测试：构造恶意订单数据
+
+4. 退款绕过
+   特征：退款接口无校验
+   测试：使用他人orderNo退款
+```
+
+### 认证相关漏洞模式
+
+```
+1. JWT伪造
+   特征：alg:None 或不验签
+   测试：修改payload重放
+
+2. 暴力破解
+   特征：无验证码、无限流
+   测试：多次尝试密码
+
+3. 会话固定
+   特征：登录后session不变
+   测试：登录前后cookie对比
+
+4. 登出后令牌仍有效
+   特征：token注销机制缺失
+   测试：登出后重放token
+```
+
+---
+
+## HTTP方法与测试策略
+
+### 不同方法的测试重点
+
+| 方法 | 测试重点 |
+|------|----------|
+| GET | 参数遍历、IDOR，信息泄露 |
+| POST | 认证绕过、业务逻辑、注入 |
+| PUT | 资源篡改、越权修改 |
+| DELETE | 资源删除、越权删除 |
+| PATCH | 部分更新、字段覆盖 |
+
+### 参数测试思维
+
+```
+接口：GET /api/xxx?param=value
+
+测试顺序：
+1. param=空值
+2. param=正常值
+3. param=特殊字符 (' " < >)
+4. param=SQL注入 (1' OR '1'='1)
+5. param=XSS (<script>alert(1)</script>)
+6. param=路径遍历 (../../../etc/passwd)
+7. param=其他用户的值 (IDOR)
+```
+
+---
+
+## 特殊情况处理
+
+### 遇到WAF/安全设备时
+
+```
+识别特征：
+- 所有请求返回相似的HTML页面
+- 响应包含"拦截"、"安全"、"访问受限"等关键词
+- 响应内容与实际API无关
+
+处理方法：
+1. 识别为WAF拦截，不是漏洞
+2. 记录"存在WAF防护"作为安全能力
+3. 可以尝试降低请求频率绕过
+
+判断逻辑：
+- 请求1: 返回业务JSON = 正常
+- 请求2: 返回HTML拦截页 = WAF
+- 请求3: 返回业务JSON = 恢复
+```
+
+### 遇到SPA应用时
+
+```
+识别特征：
+- /api/* 路径返回HTML页面
+- 响应内容是前端框架代码
+
+处理方法：
+1. 通过JS源码分析获取真实API配置
+2. 使用无头浏览器触发动态API请求
+3. 不要对SPA路由的/api/*路径直接测试
+
+判断逻辑：
+- GET /api/user/info 返回HTML = SPA前端路由
+- GET /api/user/info 返回JSON = 真实API
+```
+
+### 遇到验证码/限流时
+
+```
+思考：
+- 验证码能绕过吗？ → 改参数、删cookie
+- 限流能绕过吗？ → 改IP、延时
+- 有风控吗？ → 行为异常检测
+```
+
+### 遇到加密/混淆的数据时
+
+```
+思考：
+- 能解密吗？ → 查看前端JS代码
+- 有密钥泄露吗？ → 检查响应、注释
+- 能绕过吗？ → 不带加密参数试试
 ```
 
 ---
