@@ -1,7 +1,7 @@
 {
   "name": "api-security-testing",
-  "version": "1.0.0",
-  "description": "全自动 API 安全测试插件 - 内置赛博监工持续监督循环执行。Triggers on: 安全测试、漏洞扫描、渗透测试、API检测、安全评估。",
+  "version": "2.0.0",
+  "description": "全自动 API 安全审计 Skill - 基于 Claude Code Agent Teams。5 Agent 协作，覆盖侦察、挖掘、验证、报告全流程。【触发词】安全测试、安全审计、渗透测试、漏洞检测、安全评估、api安全、接口安全。",
   "author": {
     "name": "MonkeyCode",
     "url": "https://github.com/steveopen1"
@@ -17,14 +17,12 @@
     "api-security-testing",
     "playwright",
     "sqli",
-    "xss"
+    "idor"
   ],
   "commands": [
     "./commands/api-security-testing.md",
     "./commands/api-security-testing-scan.md",
-    "./commands/api-security-testing-hook.md",
-    "./commands/api-security-testing-status.md",
-    "./commands/api-security-testing-off.md"
+    "./commands/api-security-testing-test.md"
   ],
   "agents": "./agents/",
   "skills": "./skills/",

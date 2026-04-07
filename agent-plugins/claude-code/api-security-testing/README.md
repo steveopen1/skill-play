@@ -1,80 +1,133 @@
 # API Security Testing - Claude Code 插件
 
-全自动 API 安全测试插件，专为 Claude Code 设计。
+**全自动 API 安全审计 Skill** — 基于 Claude Code Agent Teams 的多智能体协作安全分析框架
 
-## 安装方式
+> 用户只需提供目标 URL，Skill 自动完成从侦察到生成完整安全报告的全流程。
+
+---
+
+## 特性
+
+- **5 Agent 协作** — 侦察、挖掘、验证、报告，各司其职
+- **引导者框架** — Skill 是顾问，提供决策树和检查清单
+- **Playwright 动态采集** — JS 动态内容采集
+- **Phase 驱动流程** — 阶段性推进，保证覆盖率
+
+---
+
+## 安装
 
 ### 方式一：使用插件目录
+
 ```bash
 claude --plugin-dir ./agent-plugins/CLAUDE-CODE/api-security-testing
 ```
 
 ### 方式二：复制到插件目录
+
 ```bash
 cp -r agent-plugins/CLAUDE-CODE/api-security-testing ~/.claude/plugins/
 ```
 
-## 使用命令
+---
 
-| 命令 | 说明 |
-|------|------|
-| `/api-security-testing:scan [URL]` | 完整扫描 |
-| `/api-security-testing:test [URL]` | 快速测试 |
-| `/api-security-testing:hook on/off` | 开启/关闭赛博监工 |
-| `/api-security-testing:status` | 查看状态 |
-| `/api-security-testing:off` | 关闭 |
+## 使用方法
 
-### 示例
+### 方式一：使用 Skill（推荐）
+
+```
+安全测试 https://target.com
+```
+
+### 方式二：使用命令
 
 ```
 /api-security-testing:scan https://target.com
-/api-security-testing scan https://target.com
 ```
 
-## 目录结构
+### 方式三：直接对话
 
 ```
-api-security-testing/
-├── .claude-plugin/
-│   └── plugin.json                  # 插件清单
-├── commands/                        # 命令定义
-│   ├── api-security-testing.md
-│   ├── api-security-testing-scan.md
-│   ├── api-security-testing-test.md
-│   ├── api-security-testing-hook.md
-│   └── api-security-testing-status.md
-├── agents/
-│   └── cyber-supervisor.md         # 赛博监工 Agent
-├── hooks/
-│   └── hooks.json                 # Hook 配置
-├── skills/
-│   └── api-security-testing/
-│       └── SKILL.md              # Skill 定义
-├── core/                          # Python 测试引擎
-│   ├── deep_api_tester_v55.py
-│   ├── collectors/
-│   ├── analyzers/
-│   └── testers/
-├── references/                    # 参考文档
-│   └── vulnerabilities/           # 漏洞测试 (12个)
-├── examples/                      # 使用示例
-├── templates/                    # 测试模板
-├── resources/                    # Payload 资源
-└── README.md
+帮我对 https://target.com 进行全面安全测试
 ```
 
-## 功能特性
+---
 
-- ✅ **Playwright JS 动态采集** - 无头浏览器执行 JavaScript
-- ✅ **API 端点智能发现** - JS 解析 + 流量拦截
-- ✅ **漏洞检测** - SQLi/XSS/IDOR/敏感数据/安全头部
-- ✅ **赛博监工自动监督** - 自动监测进度、失败升级
-- ✅ **Markdown 报告生成** - 自动生成测试报告
-- ✅ **Python 测试引擎** - core/ 提供完整测试能力
+## 架构
+
+```
+用户输入: "安全测试 https://example.com"
+         │
+         ▼
+┌─────────────────────────────────────┐
+│  Phase 1: 侦察与发现                 │
+│  ├─ HTTP/HTTPS 探测                 │
+│  ├─ 技术栈识别 (SPA/传统)            │
+│  └─ API 端点发现                    │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  Phase 2: 分析与分类                  │
+│  ├─ 端点分类 (认证/用户/订单/配置)    │
+│  ├─ 响应类型分析 (JSON/HTML/WAF)     │
+│  └─ 敏感信息识别                     │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  Phase 3: 漏洞测试                   │
+│  ├─ SQL注入测试                      │
+│  ├─ IDOR越权测试                    │
+│  ├─ JWT测试                         │
+│  ├─ 敏感信息泄露                    │
+│  └─ 业务逻辑测试                    │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  Phase 4: 验证与确认                 │
+│  ├─ 10维度验证                      │
+│  ├─ 误报排除                        │
+│  └─ 利用链构造                      │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  Phase 5: 报告生成                   │
+│  └─ 安全评估报告                    │
+└─────────────────────────────────────┘
+```
+
+---
+
+## 核心文件
+
+| 文件 | 说明 |
+|------|------|
+| `skills/api-security-testing/SKILL.md` | 主编排文件，包含完整引导框架 |
+| `agents/cyber-supervisor.md` | 赛博监工 Agent |
+| `core/` | Python 测试引擎 |
+| `references/` | 漏洞知识库 |
+
+---
+
+## 漏洞覆盖
+
+| 类别 | 说明 |
+|------|------|
+| SQL注入 | 布尔盲注、时间盲注、报错注入 |
+| IDOR | 水平越权、垂直越权 |
+| JWT | Token伪造、算法绕过 |
+| 敏感信息 | 密码泄露、密钥暴露、个人信息 |
+| 业务逻辑 | 订单篡改、支付绕过 |
+| 安全配置 | CORS、HSTS、头部安全 |
+
+---
 
 ## 赛博监工
 
-**自动激活**：当执行扫描命令时赛博监工自动开启监督。
+自动监督机制，失败时自动压力升级：
 
 | 失败次数 | 等级 | 动作 |
 |---------|------|------|
@@ -83,28 +136,14 @@ api-security-testing/
 | 5次 | L3 | 7点检查清单 |
 | 7次+ | L4 | 绝望模式 |
 
-## 使用 Python 测试引擎
-
-```bash
-cd api-security-testing
-python3 core/deep_api_tester_v55.py https://target.com output.md
-```
-
-## 漏洞测试覆盖
-
-| 类别 | 说明 |
-|------|------|
-| SQL 注入 | 布尔盲注，时间盲注、报错注入 |
-| XSS | 反射型、存储型、DOM 型 |
-| IDOR | 水平越权、垂直越权 |
-| JWT | Token 伪造、算法绕过 |
-| 敏感数据 | 密码、密钥、个人信息 |
-| 安全配置 | CORS、HSTS、头部 |
+---
 
 ## 重要
 
 - 仅用于合法授权的安全测试
 - 测试前确保有书面授权
+
+---
 
 ## License
 
