@@ -1,48 +1,45 @@
 ---
-description: "APSEC API 安全测试 - 赛博监工全自动循环测试。/api-security-testing [scan|test|hook|status|off] [目标URL]。Triggers on: '/api-security-testing', '/api-security-testing scan', '/api-security-testing test', '/api-security-testing hook', '/api-security-testing status', 'api-security-testing scan', 'api-security-testing test'."
-argument-hint: "[scan|test|hook|status|off] [目标URL]"
+description: "API 安全测试 Skill。Triggers on: '安全测试', '漏洞扫描', '渗透测试', 'API检测', '安全评估', '/api-security-testing'."
+argument-hint: "[目标URL]"
 ---
 
-## APSEC API 安全测试
+## API Security Testing
 
-APSEC = API Security Testing + 赛博监工(Cyber Supervisor)
+加载 Skill: `skills/api-security-testing/SKILL.md`
 
-### 功能模式
-
-- **scan** - 完整扫描：JS收集 → API发现 → 漏洞检测 → 报告生成
-- **test** - 快速测试：针对特定端点进行深度测试
-- **hook** - 开启赛博监工模式：自动循环监督测试进度
-- **status** - 查看当前测试状态和进度
-- **off** - 关闭赛博监工模式
-
-### 使用方式
+### 快速开始
 
 ```
-/api-security-testing scan https://target.com
-/api-security-testing test https://target.com/api/endpoint
-/api-security-testing hook on
-/api-security-testing status
-/api-security-testing off
+安全测试 https://target.com
+```
+
+### 支持的触发方式
+
+```
+# 基础扫描
+安全测试 https://target.com
+漏洞检测 https://target.com
+渗透测试 https://target.com
+
+# 完整流程
+全流程测试 https://target.com
+完整测试 https://target.com
+
+# 使用命令
+/api-security-testing:scan https://target.com
 ```
 
 ### 执行流程
 
-1. **Phase 1**: Playwright 强制 JS 动态采集
-2. **Phase 2**: API 端点智能发现与去重
-3. **Phase 3**: 漏洞检测 (SQLi/XSS/IDOR/敏感数据等)
-4. **Phase 4**: 赛博监工验证与利用链构造
-5. **Phase 5**: 自动报告生成
+参考 SKILL.md 中的完整流程：
 
-### 赛博监工机制
+1. **Phase 1**: 侦察与发现
+2. **Phase 2**: 分析与分类
+3. **Phase 3**: 漏洞测试
+4. **Phase 4**: 验证与确认
+5. **Phase 5**: 利用与报告
 
-当开启 hook 模式后，赛博监工将自动：
-- 监控测试进度 (Progress)
-- 检测失败次数 (Failure Count)
-- 触发压力升级 (L1-L4)
-- 决策是否继续循环
+### 重要
 
-### 无参数时
-
-无参数或只有目标URL时，执行完整 scan 流程。
-
-加载 `skills/api-security-testing/SKILL.md` 获取完整测试流程指导。
+- 必须确认目标有合法授权
+- 参考 `references/` 目录下的漏洞知识库
