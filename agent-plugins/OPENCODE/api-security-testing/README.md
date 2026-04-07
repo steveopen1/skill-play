@@ -4,18 +4,47 @@ OpenCode 插件，提供完整的 API 安全测试能力。
 
 ## 安装
 
+### 方式一：npm 安装（推荐）
+
 ```bash
 npm install opencode-api-security-testing
 ```
 
-## 配置
-
-在 `opencode.json` 中添加：
+在 `opencode.json` 中添加插件配置：
 
 ```json
 {
   "plugin": ["opencode-api-security-testing"]
 }
+```
+
+### 方式二：本地安装
+
+如果从源码安装：
+
+```bash
+# 克隆仓库
+git clone https://github.com/steveopen1/skill-play
+
+# 进入插件目录
+cd skill-play/agent-plugins/OPENCODE/api-security-testing
+
+# 使用 npm link 链接到全局
+npm link
+
+# 在项目中使用
+npm link opencode-api-security-testing
+```
+
+### 方式三：直接复制到项目
+
+将插件目录复制到项目的 `.opencode` 目录：
+
+```bash
+cp -r agent-plugins/OPENCODE/api-security-testing <your-project>/.opencode/skills/api-security-testing
+```
+
+确保插件目录放在 `.opencode/skills/` 下，OpenCode 会自动发现。
 ```
 
 ## Agents (4个)
