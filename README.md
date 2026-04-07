@@ -50,9 +50,14 @@ claude --plugin-dir ./agent-plugins/CLAUDE-CODE/api-security-testing
 
 开箱即用的 OpenCode 插件，内置赛博监工自动监督。
 
+**安装方式：**
+
 ```bash
-# 复制到项目 .opencode 目录
-cp -r agent-plugins/OPENCODE/api-security-testing/* <project>/.opencode/
+# 方式1: npm 安装（推荐）
+npm install opencode-api-security-testing
+
+# 方式2: 复制到项目 .opencode 目录
+cp -r agent-plugins/OPENCODE/api-security-testing <project>/.opencode/skills/
 ```
 
 ### 使用方式
