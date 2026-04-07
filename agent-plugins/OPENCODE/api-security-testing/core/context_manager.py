@@ -13,6 +13,7 @@ Context Manager - 上下文管理器
 import json
 import pickle
 import hashlib
+import os
 from datetime import datetime
 from typing import Dict, List, Set, Optional, Any, Callable
 from dataclasses import dataclass, field, asdict
@@ -581,6 +582,9 @@ class ContextManager:
     
     def save_to_file(self, filepath: str):
         """保存上下文到文件"""
+        output_dir = os.path.dirname(filepath)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
         with open(filepath, 'w') as f:
             json.dump(self.export_context(), f, indent=2, default=str)
     

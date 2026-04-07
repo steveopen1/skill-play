@@ -6,6 +6,7 @@ API Fuzzer - API 路径模糊测试器
 
 import re
 import time
+import os
 from typing import List, Set, Dict, Tuple, Optional
 from urllib.parse import urljoin, urlparse
 from dataclasses import dataclass, field
@@ -418,5 +419,8 @@ if __name__ == "__main__":
     
     if args.output:
         import json
+        output_dir = os.path.dirname(args.output)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
         with open(args.output, 'w') as f:
             json.dump(result, f, indent=2)

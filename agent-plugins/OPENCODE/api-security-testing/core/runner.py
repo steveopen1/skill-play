@@ -21,6 +21,7 @@ import re
 import time
 import json
 import logging
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Set
 from dataclasses import dataclass, field
@@ -871,6 +872,9 @@ def run_skill(target: str) -> Dict:
     print(report)
     
     report_file = f"security_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+    report_dir = os.path.dirname(report_file)
+    if report_dir and not os.path.exists(report_dir):
+        os.makedirs(report_dir, exist_ok=True)
     with open(report_file, 'w', encoding='utf-8') as f:
         f.write(report)
     

@@ -13,6 +13,7 @@ import requests
 import re
 import json
 import time
+import os
 from collections import defaultdict
 from typing import Dict, List, Set
 from dataclasses import dataclass
@@ -345,6 +346,10 @@ class DeepAPITesterV55:
                 report += f"- **严重程度**: {vuln.severity}\n"
                 report += f"- **端点**: {vuln.endpoint}\n"
                 report += f"- **证据**: {vuln.evidence}\n\n"
+        
+        output_dir = os.path.dirname(output_file)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
         
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(report)
