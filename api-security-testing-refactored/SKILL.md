@@ -688,36 +688,6 @@ email         → 可用于钓鱼
 
 ---
 
-## 特殊情况处理
-
-### 遇到WAF/安全设备时
-
-```
-识别特征：
-- 所有请求返回相似的HTML页面
-- 响应包含"拦截"、"安全"、"访问受限"等关键词
-
-处理方法：
-1. 识别为WAF拦截，不是漏洞
-2. 记录"存在WAF防护"作为安全能力
-3. 可以尝试降低请求频率绕过
-```
-
-### 遇到SPA应用时
-
-```
-识别特征：
-- /api/* 路径返回HTML页面
-- 响应内容是前端框架代码
-
-处理方法：
-1. 通过JS源码分析获取真实API配置
-2. 使用无头浏览器触发动态API请求
-3. 不要对SPA路由的/api/*路径直接测试
-```
-
----
-
 ## SPA应用采集流程
 
 ### 阶段1: 判断是否SPA
@@ -982,6 +952,97 @@ api_endpoints = [
 
 ---
 
+## 认证上下文理解
+
+### 发现登录接口后
+
+```
+你发现的：POST /api/login {"username":"xxx","password":"xxx"}
+
+思考：
+1. 返回token吗？ → 记录token
+2. 返回userId吗？ → 记录userId
+3. 响应有什么区别？ → 用户枚举
+4. 有验证码吗？ → 暴力破解难度
+
+接下来用这个token：
+- 访问 GET /api/user/info
+- 访问 GET /api/order/list
+- 尝试 GET /api/admin/xxx (测试权限)
+```
+
+### 发现token但不知道用法时
+
+```
+你发现的：token=eyJhbGciOiJIUzI1NiJ9...
+
+思考：
+1. JWT吗？ → 解码看payload
+2. 放在哪？ → Authorization: Bearer token
+3. 哪个接口用？ → 尝试访问需要认证的接口
+4. userId是什么？ → 从token解码获取
+```
+
+---
+
+## 利用链推理提示词
+
+当发现多个漏洞时，按以下模板进行利用链分析：
+
+### 模板1：认证类漏洞利用链
+
+```
+发现的漏洞：
+- 登录接口无验证码
+- 暴力破解可获取有效账号
+
+利用链推理：
+1. 使用暴力破解获取有效账号 → 记录账号密码
+2. 使用有效账号登录 → 获取 JWT Token
+3. 使用 Token 访问敏感接口 → 测试越权操作
+4. 越权访问获取更多数据 → 扩大攻击面
+
+验证步骤：
+- 使用获取的 Token 请求 /api/admin/user/list
+- 如果返回用户数据，说明 Token 有效且可利用
+```
+
+### 模板2：用户枚举 + IDOR 利用链
+
+```
+发现的漏洞：
+- 用户存在/不存在响应不同（用户枚举）
+- 查询接口存在 IDOR
+
+利用链推理：
+1. 用户枚举获取 userId 列表
+2. 使用 userId 遍历查询接口
+3. 如果能查到他人数据，说明存在 IDOR
+
+验证步骤：
+- 使用不同 userId 请求 /api/user/profile?userId=X
+- 对比返回数据是否属于不同用户
+```
+
+### 模板3：敏感信息泄露 + 认证绕过
+
+```
+发现的漏洞：
+- 某接口返回敏感信息（如 password）
+- 另一接口存在认证绕过
+
+利用链推理：
+1. 认证绕过获取初始访问
+2. 利用敏感信息泄露获取更多凭证
+3. 组合利用扩大攻击面
+
+验证步骤：
+- 绕过认证访问 /api/info 获取数据
+- 检查响应中包含可利用的凭证
+```
+
+---
+
 ## 特殊情况处理
 
 ### 遇到WAF/安全设备时
@@ -1101,6 +1162,41 @@ Payload: {"username": "admin'", "password": "test"}
 | `10-auth-tests.md` | 认证测试扩展 |
 | `11-graphql-tests.md` | GraphQL测试 |
 | `12-ssrf-tests.md` | SSRF测试 |
+
+---
+
+## 核心模块能力池 (core/)
+
+> **重要**：能力池只作为参考，模块是工具，人才是主导。根据测试场景选择合适的模块。
+
+### 核心模块索引
+
+| 类别 | 模块 | 功能 |
+|------|------|------|
+| **采集** | `browser_collect.py` | Playwright无头浏览器采集，捕获XHR/Fetch |
+| **采集** | `js_parser.py` | JS源码解析，AST+正则双模式提取API |
+| **分析** | `sensitive_finder.py` | 敏感信息发现 |
+| **分析** | `response_analyzer.py` | 响应类型分析 |
+| **测试** | `sqli_tester.py` | SQL注入测试 |
+| **测试** | `idor_tester.py` | 越权测试 |
+| **测试** | `jwt_tester.py` | JWT漏洞测试 |
+| **测试** | `auth_tester.py` | 认证绕过测试 |
+| **验证** | `vuln_verifier.py` | 10维度漏洞验证 |
+| **辅助** | `base_path_dict.py` | API base path字典 |
+| **辅助** | `payload_lib.py` | Payload库 |
+| **编排** | `orchestrator.py` | 多阶段测试编排 |
+
+### 场景→模块选择
+
+| 场景 | 推荐模块 |
+|------|----------|
+| SPA应用发现API | `browser_collect.py` + `js_parser.py` |
+| 快速探测目标 | `http_client.py` |
+| SQL注入测试 | `sqli_tester.py` |
+| 越权测试 | `idor_tester.py` |
+| JWT漏洞测试 | `jwt_tester.py` |
+| 漏洞验证 | `vuln_verifier.py` |
+| 全面扫描 | `orchestrator.py` |
 
 ---
 
